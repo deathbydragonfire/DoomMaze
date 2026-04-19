@@ -1,0 +1,20 @@
+# Unity Console Log - 2026-04-19 09:58:34
+# CoBuddy auto-generated. Use readFiles: ["console"] or @CoBuddyConsoleLog.txt
+
+[09:58:06.298] [Log] [CoBuddy.MainThreadInvoker] ScheduleOnNextUpdate 'compilation-tracker.after-assembly-reload-announce' fired 157038ms after schedule (likely post-reload resume).
+UnityEngine.Debug:Log (object)
+CoBuddy.Editor.Services.Actions.MainThreadInvoker/<>c__DisplayClass13_0:<ScheduleOnNextUpdate>b__0 () (at C:/Users/retro/CoBuddy/Packages/CoBuddy/Editor/Services/Actions/MainThreadInvoker.cs:173)
+UnityEditor.EditorApplication:Internal_CallDelayFunctions ()
+
+[09:58:06.569] [Log] [CoBuddy.InProcessCodeIntelligence] Prewarmed R:/DoomMaze/DoomMaze/DoomMaze/Assets/Scripts/Audio/AudioManager.cs in 267ms (top-level members: 1, tokens: 778)
+UnityEngine.Debug:Log (object)
+CoBuddy.Editor.Services.InProcessCodeIntelligence:Prewarm (string) (at C:/Users/retro/CoBuddy/Packages/CoBuddy/Editor/Services/InProcessCodeIntelligence.cs:119)
+CoBuddy.Editor.Services.InProcessCodeIntelligence:MaybeAutoPrewarmOnce () (at C:/Users/retro/CoBuddy/Packages/CoBuddy/Editor/Services/InProcessCodeIntelligence.cs:150)
+UnityEditor.EditorApplication:Internal_CallDelayFunctions ()
+
+[09:58:34.576] [Log] CoBuddy CodeIndex rebuilt. Scripts: 91, Edges: 103
+UnityEngine.Debug:Log (object)
+CoBuddy.Editor.Services.CodeIndex:RebuildIndex () (at C:/Users/retro/CoBuddy/Packages/CoBuddy/Editor/Services/CodeIndex.cs:75)
+CoBuddy.Editor.Services.CodeIndex:OnCompilationFinished (object) (at C:/Users/retro/CoBuddy/Packages/CoBuddy/Editor/Services/CodeIndex.cs:44)
+UnityEditor.Scripting.ScriptCompilation.EditorCompilationInterface:TickCompilationPipeline (UnityEditor.Scripting.ScriptCompilation.EditorScriptCompilationOptions,UnityEditor.BuildTarget,int,string[],bool)
+
