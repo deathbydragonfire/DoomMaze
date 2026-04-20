@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class MapGenerator : MonoBehaviour
 {
-    public enum RoomType { Start, Enemy, Hallway, Upgrade, Boss, Exit, DeadEnd }
+    public enum RoomType { Start, Enemy, Hallway, Corner, Upgrade, Boss, Exit, DeadEnd }
 
     public class RoomNode
     {
@@ -45,9 +45,16 @@ public class MapGenerator : MonoBehaviour
     private bool _bossGenerated;
     private System.Random _rng;
 
-    private void Start()
+    /// <summary>The root node of the last generated map tree. Null until Generate() is called.</summary>
+    public RoomNode Root => _root;
+
+    private void Awake()
     {
         Generate();
+    }
+
+    private void Start()
+    {
         PrintMap();
     }
 
@@ -163,6 +170,7 @@ public class MapGenerator : MonoBehaviour
             RoomType.Boss    => 2,
             RoomType.Exit    => 1,
             RoomType.DeadEnd => 1,
+            RoomType.Corner  => 2,
             RoomType.Hallway => PickHallwayConnectionCount(),
             _                => 1,
         };
@@ -308,6 +316,7 @@ public class MapGenerator : MonoBehaviour
         string detail = node.Type switch
         {
             RoomType.Hallway => $" [{node.ConnectionCount} connections]",
+            RoomType.Corner  => " [corner]",
             RoomType.Boss    => $" (enemies on path: {node.PathEnemyCount})",
             RoomType.DeadEnd => " (terminal)",
             _                => string.Empty,
