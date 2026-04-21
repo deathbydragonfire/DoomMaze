@@ -1,0 +1,2 @@
+frame 1 and 15 can get removed, empty frames
+frame 4 untill 9 get repeated once (so last loop frame is 13)

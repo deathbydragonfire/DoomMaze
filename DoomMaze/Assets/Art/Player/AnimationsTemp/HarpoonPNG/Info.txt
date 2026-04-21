@@ -1,0 +1,2 @@
+Harp0007 and Harp0008 are the repeating frames for button mash
+Harp15 is ending frame (or empty frame)

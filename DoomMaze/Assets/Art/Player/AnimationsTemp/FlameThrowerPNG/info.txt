@@ -1,0 +1,5 @@
+first/last frame is empty and can be removed.
+Frame 2-5 is pickup
+Frame 6-8 is charge
+Frame 9/10 is repeated up untill 17
+frame 18-19 is overheating

@@ -1,0 +1,4 @@
+Frame1 can get removed, empty frame.
+I included a retraced frame as requested(hookpunch0005)
+
+Also includes a bit of impact effects, temporary place holders.
