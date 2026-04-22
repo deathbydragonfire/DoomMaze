@@ -15,20 +15,13 @@ public class MapGeneratorEditor : Editor
 
         MapGenerator generator = (MapGenerator)target;
 
-        if (GUILayout.Button("Generate Map", GUILayout.Height(32)))
-        {
-            generator.Generate();
-            generator.PrintMap();
-        }
-
-        EditorGUILayout.Space();
-
         MazePopulator populator = generator.GetComponent<MazePopulator>();
         if (populator != null)
         {
             if (GUILayout.Button("Populate Maze", GUILayout.Height(32)))
             {
                 generator.Generate();
+                generator.PrintMap();
                 populator.Populate();
             }
 
