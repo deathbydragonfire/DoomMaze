@@ -12,6 +12,11 @@ public class MeleeWeapon : WeaponBase
     private const int OVERLAP_BUFFER_SIZE = 8;
     private readonly Collider[] _overlapBuffer = new Collider[OVERLAP_BUFFER_SIZE];
 
+    protected override void Awake()
+    {
+        base.Awake();
+    }
+
     // ── IWeapon overrides ─────────────────────────────────────────────────────
 
     /// <summary>Melee always reports it can fire — ammo is infinite.</summary>
@@ -39,6 +44,8 @@ public class MeleeWeapon : WeaponBase
 
         ExecuteFire();
 
+        AudioManager.Instance?.PlaySfx(_data.FireSounds);
+
         EventBus<WeaponFiredEvent>.Raise(new WeaponFiredEvent { Data = _data });
     }
 
@@ -61,5 +68,13 @@ public class MeleeWeapon : WeaponBase
         }
 
         _viewmodelAnimator?.PlayMelee();
+        _spriteSequencer?.PlayNextPunch();
+
+        if (_data != null)
+            EventBus<CameraShakeEvent>.Raise(new CameraShakeEvent
+            {
+                Magnitude = _data.ShakeMagnitude,
+                Duration  = _data.ShakeDuration
+            });
     }
 }

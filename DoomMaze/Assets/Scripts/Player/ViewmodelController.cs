@@ -1,8 +1,11 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 /// <summary>
 /// Manages the viewmodel child camera (depth, clear flags, culling mask)
 /// and drives weapon bob from <see cref="PlayerMovement"/>.
+/// Registers itself into the base camera's URP overlay stack at Awake.
 /// Attach to the viewmodel camera's parent or the camera itself.
 /// </summary>
 public class ViewmodelController : MonoBehaviour
@@ -25,12 +28,27 @@ public class ViewmodelController : MonoBehaviour
             return;
         }
 
-        _viewmodelCamera.clearFlags  = CameraClearFlags.Depth;
         _viewmodelCamera.cullingMask = LayerMask.GetMask("Viewmodel");
 
         Camera mainCam = Camera.main;
         if (mainCam != null)
+        {
             _viewmodelCamera.depth = mainCam.depth + 1;
+
+            UniversalAdditionalCameraData baseCamData =
+                mainCam.GetComponent<UniversalAdditionalCameraData>();
+
+            if (baseCamData != null)
+            {
+                List<Camera> stack = baseCamData.cameraStack;
+                if (!stack.Contains(_viewmodelCamera))
+                    stack.Add(_viewmodelCamera);
+            }
+            else
+            {
+                Debug.LogError("[ViewmodelController] MainCamera has no UniversalAdditionalCameraData.");
+            }
+        }
     }
 
     private void LateUpdate()

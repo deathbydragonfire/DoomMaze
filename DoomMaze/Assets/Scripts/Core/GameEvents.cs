@@ -60,3 +60,14 @@ public struct MusicTrackEvent { public string TrackId; }
 
 // ── Phase 8: UI events ────────────────────────────────────────────────────────
 public struct PickupFeedMessageEvent { public string Message; }
+
+// ── Camera events ─────────────────────────────────────────────────────────────
+public struct CameraShakeEvent { public float Magnitude; public float Duration; }
+public struct CameraPunchEvent  { public UnityEngine.Vector3 EulerAngles; public float Duration; }
+
+// ── Grapple events ────────────────────────────────────────────────────────────
+public struct GrappleHookedEvent       { public UnityEngine.GameObject Enemy; }
+public struct GrappleMissedEvent       { }
+public struct GrapplePulledEvent       { public UnityEngine.GameObject Enemy; }
+public struct GrappleMashProgressEvent { public float Progress; }
+public struct GrappleReleasedEvent     { }

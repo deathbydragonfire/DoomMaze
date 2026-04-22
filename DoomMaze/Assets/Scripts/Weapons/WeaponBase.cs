@@ -28,18 +28,25 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
 
     protected float _nextFireTime;
     private   bool  _isReloading;
+    private   Coroutine _fireStopCoroutine;
 
     // ── Cached references ─────────────────────────────────────────────────────
 
     protected PlayerInventory   _playerInventory;
-    protected ViewmodelAnimator _viewmodelAnimator;
+    protected ViewmodelAnimator   _viewmodelAnimator;
+    protected PunchSpriteSequencer _spriteSequencer;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     protected virtual void Awake()
     {
-        _playerInventory   = GetComponentInParent<PlayerInventory>();
-        _viewmodelAnimator = GetComponentInParent<ViewmodelAnimator>();
+        _playerInventory = GetComponentInParent<PlayerInventory>();
+
+        Transform viewmodelRoot = transform.parent;
+        if (viewmodelRoot != null)
+            _viewmodelAnimator = viewmodelRoot.GetComponentInChildren<ViewmodelAnimator>();
+
+        _spriteSequencer = GetComponent<PunchSpriteSequencer>();
     }
 
     protected virtual void Start()
@@ -67,10 +74,16 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
 
         ExecuteFire();
 
+        _spriteSequencer?.StartFiring();
+
+        if (_fireStopCoroutine != null)
+            StopCoroutine(_fireStopCoroutine);
+        _fireStopCoroutine = StartCoroutine(FireStopCoroutine());
+
         EventBus<WeaponFiredEvent>.Raise(new WeaponFiredEvent { Data = _data });
         RaiseAmmoChanged();
 
-        AudioManager.Instance?.PlaySfx(_data.FireSound);
+        AudioManager.Instance?.PlaySfx(_data.FireSounds);
 
         if (CurrentAmmo <= 0)
             TryAutoReload();
@@ -94,12 +107,21 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
     public virtual void OnEquip()
     {
         gameObject.SetActive(true);
+
+        if (_data != null && _spriteSequencer != null)
+            _spriteSequencer.ApplyLayout(_data.ViewmodelSpriteSize, _data.ViewmodelSpritePosition);
     }
 
     /// <inheritdoc/>
     public virtual void OnUnequip()
     {
         _isReloading = false;
+        if (_fireStopCoroutine != null)
+        {
+            StopCoroutine(_fireStopCoroutine);
+            _fireStopCoroutine = null;
+        }
+        _spriteSequencer?.StopFiring();
         StopAllCoroutines();
         gameObject.SetActive(false);
     }
@@ -119,7 +141,7 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
     {
         _isReloading = true;
 
-        AudioManager.Instance?.PlaySfx(_data.ReloadSound);
+        AudioManager.Instance?.PlaySfx(_data.ReloadSounds);
 
         float reloadTime = _data.ReloadTime > 0f ? _data.ReloadTime : 1f;
         yield return new WaitForSeconds(reloadTime);
@@ -147,6 +169,14 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
             CarriedAmmo = string.IsNullOrEmpty(_data.AmmoTypeId) ? 999
                         : (_playerInventory != null ? _playerInventory.GetAmmo(_data.AmmoTypeId) : 0)
         });
+    }
+
+    private IEnumerator FireStopCoroutine()
+    {
+        float interval = _data != null && _data.FireRate > 0f ? 1f / _data.FireRate : 0.5f;
+        yield return new WaitForSeconds(interval * 2f);
+        _spriteSequencer?.StopFiring();
+        _fireStopCoroutine = null;
     }
 
     // ── Abstract ──────────────────────────────────────────────────────────────

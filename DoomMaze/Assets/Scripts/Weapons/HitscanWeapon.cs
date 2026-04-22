@@ -64,6 +64,13 @@ public class HitscanWeapon : WeaponBase
 
             StartCoroutine(SpawnTracer(origin, endPoint));
         }
+
+        if (_data != null)
+            EventBus<CameraShakeEvent>.Raise(new CameraShakeEvent
+            {
+                Magnitude = _data.ShakeMagnitude,
+                Duration  = _data.ShakeDuration
+            });
     }
 
     private IEnumerator SpawnTracer(Vector3 start, Vector3 end)

@@ -26,6 +26,7 @@ public class EnemyBase : MonoBehaviour
     public EnemyState CurrentState     { get; private set; }
     public EnemyData  Data             => _data;
     public bool       IsAlive          => _healthComponent.IsAlive;
+    public bool       IsGrappled       { get; private set; }
 
     /// <summary>Cached player transform, exposed to attack modules.</summary>
     public Transform  PlayerTransform  { get; private set; }
@@ -98,7 +99,34 @@ public class EnemyBase : MonoBehaviour
     private void Update()
     {
         if (!IsAlive) return;
+        if (IsGrappled) return;
         TickStateMachine();
+    }
+
+    // ── Grapple API ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called by <see cref="GrappledState"/> to pause the state machine while
+    /// the enemy is hooked or being pulled.
+    /// </summary>
+    public void SetGrappled(bool grappled)
+    {
+        IsGrappled = grappled;
+    }
+
+    /// <summary>
+    /// Forces the enemy into the Hurt state for <paramref name="duration"/> seconds,
+    /// suppressing the normal 0.4s timer. Used by the grapple pull landing.
+    /// </summary>
+    public void Stun(float duration)
+    {
+        if (!IsAlive) return;
+        IsGrappled = false;
+        CurrentState = EnemyState.Hurt;
+        _agent.isStopped = true;
+        _hurtTimer = duration;
+        _billboard?.SetAnimation(_data?.HurtSprites, loop: false);
+        AudioManager.Instance?.PlaySfx(_data?.HurtSound);
     }
 
     // ── State Machine ─────────────────────────────────────────────────────────

@@ -28,12 +28,18 @@ public class WeaponData : ScriptableObject
     public bool HasAltFire;
 
     [Header("Audio")]
-    public AudioClip FireSound;
-    public AudioClip EmptyClickSound;
-    public AudioClip ReloadSound;
+    public AudioClip[] FireSounds;
+    public AudioClip[] EmptyClickSounds;
+    public AudioClip[] ReloadSounds;
+
+    [Header("Screen Shake")]
+    public float ShakeMagnitude = 0.05f;
+    public float ShakeDuration  = 0.12f;
 
     [Header("Viewmodel")]
-    public Sprite[] ViewmodelSprites; // [0] = idle frame
+    public Sprite[] ViewmodelSprites;                                 // [0] = idle frame
+    public Vector2  ViewmodelSpriteSize     = new Vector2(900, 900); // Canvas pixel size
+    public Vector2  ViewmodelSpritePosition = Vector2.zero;          // Offset from bottom-center anchor
 }
 
 /// <summary>Defines whether the weapon fires once per press or continuously while held.</summary>

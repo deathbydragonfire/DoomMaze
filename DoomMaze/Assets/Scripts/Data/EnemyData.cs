@@ -45,4 +45,7 @@ public class EnemyData : ScriptableObject
     public Sprite[] HurtSprites;
     public Sprite[] DeathSprites;
     public float    FrameRate;            // Sprite animation FPS
+
+    [Header("Grapple")]
+    public bool IsHookImmune;
 }

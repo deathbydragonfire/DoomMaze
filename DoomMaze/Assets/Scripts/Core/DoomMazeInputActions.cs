@@ -219,6 +219,15 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
                     ""initialStateCheck"": false
                 },
                 {
+                    ""name"": ""Weapon 6"",
+                    ""type"": ""Button"",
+                    ""id"": ""90cab180-a937-47d4-b3b8-6bd179628336"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
                     ""name"": ""Pause"",
                     ""type"": ""Button"",
                     ""id"": ""c3655871-e25a-4fe0-83db-b45fc3782731"",
@@ -438,6 +447,17 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
                 },
                 {
                     ""name"": """",
+                    ""id"": ""0615488b-e250-4b68-ba12-6a0e5de53ce7"",
+                    ""path"": ""<Keyboard>/6"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Weapon 6"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
                     ""id"": ""1bd77a29-1be6-4e71-8b76-4121546a4c56"",
                     ""path"": ""<Keyboard>/escape"",
                     ""interactions"": """",
@@ -651,6 +671,7 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
         m_Player_Weapon3 = m_Player.FindAction("Weapon 3", throwIfNotFound: true);
         m_Player_Weapon4 = m_Player.FindAction("Weapon 4", throwIfNotFound: true);
         m_Player_Weapon5 = m_Player.FindAction("Weapon 5", throwIfNotFound: true);
+        m_Player_Weapon6 = m_Player.FindAction("Weapon 6", throwIfNotFound: true);
         m_Player_Pause = m_Player.FindAction("Pause", throwIfNotFound: true);
         m_Player_Inventory = m_Player.FindAction("Inventory", throwIfNotFound: true);
         // UI
@@ -756,6 +777,7 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
     private readonly InputAction m_Player_Weapon3;
     private readonly InputAction m_Player_Weapon4;
     private readonly InputAction m_Player_Weapon5;
+    private readonly InputAction m_Player_Weapon6;
     private readonly InputAction m_Player_Pause;
     private readonly InputAction m_Player_Inventory;
     /// <summary>
@@ -825,6 +847,10 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Player/Weapon5".
         /// </summary>
         public InputAction @Weapon5 => m_Wrapper.m_Player_Weapon5;
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Weapon6".
+        /// </summary>
+        public InputAction @Weapon6 => m_Wrapper.m_Player_Weapon6;
         /// <summary>
         /// Provides access to the underlying input action "Player/Pause".
         /// </summary>
@@ -901,6 +927,9 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
             @Weapon5.started += instance.OnWeapon5;
             @Weapon5.performed += instance.OnWeapon5;
             @Weapon5.canceled += instance.OnWeapon5;
+            @Weapon6.started += instance.OnWeapon6;
+            @Weapon6.performed += instance.OnWeapon6;
+            @Weapon6.canceled += instance.OnWeapon6;
             @Pause.started += instance.OnPause;
             @Pause.performed += instance.OnPause;
             @Pause.canceled += instance.OnPause;
@@ -960,6 +989,9 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
             @Weapon5.started -= instance.OnWeapon5;
             @Weapon5.performed -= instance.OnWeapon5;
             @Weapon5.canceled -= instance.OnWeapon5;
+            @Weapon6.started -= instance.OnWeapon6;
+            @Weapon6.performed -= instance.OnWeapon6;
+            @Weapon6.canceled -= instance.OnWeapon6;
             @Pause.started -= instance.OnPause;
             @Pause.performed -= instance.OnPause;
             @Pause.canceled -= instance.OnPause;
@@ -1255,6 +1287,13 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnWeapon5(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Weapon 6" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnWeapon6(InputAction.CallbackContext context);
         /// <summary>
         /// Method invoked when associated input action "Pause" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
         /// </summary>
