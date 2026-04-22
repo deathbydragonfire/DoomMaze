@@ -18,11 +18,16 @@ public class HitscanWeapon : WeaponBase
     [SerializeField] private float  _tracerScale    = 0.06f;
     [SerializeField] private Color  _tracerColor    = new Color(1f, 0.95f, 0.55f, 1f);
 
+    [Header("Muzzle Flash")]
+    [SerializeField] private MuzzleFlash _muzzleFlash;
+
     private readonly RaycastHit[] _hitBuffer = new RaycastHit[1];
 
     /// <inheritdoc/>
     protected override void ExecuteFire()
     {
+        _muzzleFlash?.Flash();
+
         Camera cam = Camera.main;
         if (cam == null) return;
 

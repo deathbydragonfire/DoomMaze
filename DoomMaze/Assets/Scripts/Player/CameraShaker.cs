@@ -31,7 +31,7 @@ public class CameraShaker : MonoBehaviour
     private void LateUpdate()
     {
         transform.localPosition = _shakeOffset;
-        transform.localRotation = Quaternion.Euler(_punchEuler);
+        transform.localEulerAngles = _punchEuler;
     }
 
     // ── Shake ─────────────────────────────────────────────────────────────────

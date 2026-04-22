@@ -4,14 +4,18 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Owns the player's weapon loadout slots, handles hotkey input (1–5),
 /// triggers swap animations, and keeps <see cref="PlayerCombat"/> in sync.
-/// Slot 0 = Fists (always present). Empty slots are null.
+/// The melee weapon is a dedicated quick-melee accessible via F at all times and is NOT a slot.
+/// Empty slots are null.
 /// </summary>
 public class WeaponSwitcher : MonoBehaviour
 {
     [SerializeField] private PlayerCombat      _playerCombat;
     [SerializeField] private ViewmodelAnimator _viewmodelAnimator;
 
-    [Tooltip("Fixed 5-element array. Assign weapon MonoBehaviours in the Inspector. Slot 0 = Fists.")]
+    [Tooltip("Always-available fist/melee weapon triggered by F. Not part of the numbered slots.")]
+    [SerializeField] private MeleeWeapon _quickMeleeWeapon;
+
+    [Tooltip("Fixed 5-element array. Assign weapon MonoBehaviours in the Inspector.")]
     [SerializeField] private WeaponBase[] _weaponSlots = new WeaponBase[5];
 
     /// <summary>The currently active slot index (0-based).</summary>
@@ -24,6 +28,7 @@ public class WeaponSwitcher : MonoBehaviour
     private void Start()
     {
         EventBus<GameStateChangedEvent>.Subscribe(OnGameStateChanged);
+        InitialiseQuickMelee();
         TryBindInput();
     }
 
@@ -40,6 +45,14 @@ public class WeaponSwitcher : MonoBehaviour
             TryBindInput();
             TryEquipDefault();
         }
+    }
+
+    private void InitialiseQuickMelee()
+    {
+        if (_quickMeleeWeapon == null) return;
+
+        _playerCombat.SetQuickMeleeWeapon(_quickMeleeWeapon);
+        _quickMeleeWeapon.gameObject.SetActive(true);
     }
 
     private void TryBindInput()
@@ -67,15 +80,21 @@ public class WeaponSwitcher : MonoBehaviour
     {
         if (ActiveSlot >= 0) return;
 
-        if (_weaponSlots.Length > 0 && _weaponSlots[0] != null)
+        for (int i = 0; i < _weaponSlots.Length; i++)
         {
-            ActiveSlot = 0;
-            _weaponSlots[0].OnEquip();
-            _playerCombat.SetActiveWeapon(0, _weaponSlots[0]);
+            if (_weaponSlots[i] == null) continue;
+
+            ActiveSlot = i;
+            _weaponSlots[i].OnEquip();
+            _playerCombat.SetActiveWeapon(i, _weaponSlots[i]);
+            break;
         }
 
-        for (int i = 1; i < _weaponSlots.Length; i++)
-            _weaponSlots[i]?.OnUnequip();
+        for (int i = 0; i < _weaponSlots.Length; i++)
+        {
+            if (i != ActiveSlot)
+                _weaponSlots[i]?.OnUnequip();
+        }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────

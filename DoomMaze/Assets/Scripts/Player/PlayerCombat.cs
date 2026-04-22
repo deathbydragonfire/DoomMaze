@@ -4,6 +4,7 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Bridge between player input and the active weapon.
 /// Subscribes to Fire, AltFire, and Melee input actions and delegates to <see cref="IWeapon"/>.
+/// The Melee action always fires the quick-melee weapon regardless of the active slot.
 /// Supports both semi-auto (performed callback) and full-auto (held poll in Update).
 /// </summary>
 public class PlayerCombat : MonoBehaviour
@@ -11,8 +12,9 @@ public class PlayerCombat : MonoBehaviour
     /// <summary>Currently active weapon slot index (0-based).</summary>
     public int ActiveWeaponSlot { get; private set; }
 
-    private IWeapon _activeWeapon;
-    private bool    _isFiring;
+    private IWeapon      _activeWeapon;
+    private MeleeWeapon  _quickMeleeWeapon;
+    private bool         _isFiring;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -91,6 +93,15 @@ public class PlayerCombat : MonoBehaviour
         EventBus<WeaponEquippedEvent>.Raise(new WeaponEquippedEvent { SlotIndex = slot });
     }
 
+    /// <summary>
+    /// Registers the always-available quick-melee weapon triggered by the Melee keybind (F).
+    /// Called by <see cref="WeaponSwitcher"/> during initialisation.
+    /// </summary>
+    public void SetQuickMeleeWeapon(MeleeWeapon meleeWeapon)
+    {
+        _quickMeleeWeapon = meleeWeapon;
+    }
+
     // ── Input handlers ────────────────────────────────────────────────────────
 
     private void OnFirePerformed(InputAction.CallbackContext context)
@@ -114,7 +125,6 @@ public class PlayerCombat : MonoBehaviour
 
     private void OnMeleePerformed(InputAction.CallbackContext context)
     {
-        // Routes through Fire() — MeleeWeapon.ExecuteFire handles the overlap and plays PlayMelee().
-        _activeWeapon?.Fire();
+        _quickMeleeWeapon?.Fire();
     }
 }

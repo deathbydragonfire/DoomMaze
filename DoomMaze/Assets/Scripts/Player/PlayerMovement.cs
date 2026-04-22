@@ -39,6 +39,9 @@ public class PlayerMovement : MonoBehaviour
     private bool  _canMove = false;
     private bool  _wasGrounded;
     private bool  _isNoclip;
+    private bool  _wasSprinting;
+    private bool  _wasAirborne;
+    private float _peakFallSpeed;
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -148,6 +151,17 @@ public class PlayerMovement : MonoBehaviour
         IsGrounded = _characterController.isGrounded;
         Velocity   = _characterController.velocity;
 
+        if (!IsGrounded && _verticalVelocity < 0f)
+            _peakFallSpeed = Mathf.Max(_peakFallSpeed, Mathf.Abs(_verticalVelocity));
+
+        if (IsGrounded && _wasAirborne)
+        {
+            EventBus<PlayerLandedEvent>.Raise(new PlayerLandedEvent { FallSpeed = _peakFallSpeed });
+            _peakFallSpeed = 0f;
+        }
+
+        _wasAirborne = !IsGrounded;
+
         float horizontalSpeed = new Vector3(Velocity.x, 0f, Velocity.z).magnitude;
         CurrentSpeedRatio = Mathf.Clamp01(horizontalSpeed / (_stats.WalkSpeed * _stats.SprintMultiplier));
     }
@@ -192,7 +206,8 @@ public class PlayerMovement : MonoBehaviour
 
     private void UpdateState()
     {
-        bool isMoving = _moveInput.sqrMagnitude > 0.01f;
+        bool isMoving    = _moveInput.sqrMagnitude > 0.01f;
+        bool isSprinting = _isSprinting && isMoving && !_isCrouching;
 
         if (!IsGrounded)
         {
@@ -206,7 +221,7 @@ public class PlayerMovement : MonoBehaviour
         {
             CurrentState = isMoving ? MovementState.Crouch : MovementState.Idle;
         }
-        else if (_isSprinting && isMoving)
+        else if (isSprinting)
         {
             CurrentState = MovementState.Sprint;
         }
@@ -217,6 +232,12 @@ public class PlayerMovement : MonoBehaviour
         else
         {
             CurrentState = MovementState.Idle;
+        }
+
+        if (isSprinting != _wasSprinting)
+        {
+            EventBus<PlayerSprintChangedEvent>.Raise(new PlayerSprintChangedEvent { IsSprinting = isSprinting });
+            _wasSprinting = isSprinting;
         }
 
         _wasGrounded = IsGrounded;

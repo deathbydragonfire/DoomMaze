@@ -67,6 +67,9 @@ public class MeleeWeapon : WeaponBase
             });
         }
 
+        if (hitCount > 0)
+            EventBus<MeleeHitEvent>.Raise(new MeleeHitEvent { HitCount = hitCount });
+
         _viewmodelAnimator?.PlayMelee();
         _spriteSequencer?.PlayNextPunch();
 

@@ -71,3 +71,10 @@ public struct GrappleMissedEvent       { }
 public struct GrapplePulledEvent       { public UnityEngine.GameObject Enemy; }
 public struct GrappleMashProgressEvent { public float Progress; }
 public struct GrappleReleasedEvent     { }
+
+// ── Hype / Feedback events ────────────────────────────────────────────────────
+public struct KillStreakEvent          { public int StreakCount; }
+public struct KillConfirmedEvent       { public UnityEngine.Vector3 WorldPosition; public bool IsStreakKill; }
+public struct PlayerLandedEvent        { public float FallSpeed; }
+public struct PlayerSprintChangedEvent { public bool IsSprinting; }
+public struct MeleeHitEvent            { public int HitCount; }

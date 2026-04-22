@@ -38,6 +38,7 @@ public class EnemyBase : MonoBehaviour
     private IAttackModule        _attackModule;
     private EnemySpriteBillboard _billboard;
     private EnemyHitFlash        _hitFlash;
+    [SerializeField] private EnemyDeathBurst _deathBurst;
 
     // ── State timers (no coroutines — floats decremented in Update) ───────────
 
@@ -259,6 +260,8 @@ public class EnemyBase : MonoBehaviour
             Enemy   = gameObject,
             EnemyId = _data != null ? _data.EnemyId : string.Empty
         });
+
+        _deathBurst?.Burst(transform.position);
     }
 
     private void OnHurt(DamageInfo info)
