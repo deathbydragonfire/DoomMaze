@@ -21,6 +21,8 @@ public class PunchSpriteSequencer : MonoBehaviour
     private   int           _lastSetIndex    = -1;
     private   Vector2       _defaultPosition;
 
+    public virtual bool CanSwitchWeapons => true;
+
     private void Awake()
     {
         _animator = GetComponent<Animator>();

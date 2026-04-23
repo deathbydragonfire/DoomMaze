@@ -15,6 +15,8 @@ public class LoopingSpriteSequencer : PunchSpriteSequencer
     private bool      _isFiringLoop;
     private Coroutine _loopCoroutine;
 
+    public override bool CanSwitchWeapons => _loopCoroutine == null;
+
     /// <summary>
     /// Begins the intro-then-loop sequence. Re-entrant calls while already looping are ignored.
     /// </summary>

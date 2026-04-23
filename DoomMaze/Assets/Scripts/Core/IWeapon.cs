@@ -10,6 +10,9 @@ public interface IWeapon
     /// <summary>Ammo currently loaded in the weapon's magazine.</summary>
     int CurrentAmmo { get; }
 
+    /// <summary>Returns true when the weapon can be safely switched away from.</summary>
+    bool CanBeSwitchedAway { get; }
+
     /// <summary>Returns true if the weapon is allowed to fire right now (rate, ammo, state).</summary>
     bool CanFire();
 
