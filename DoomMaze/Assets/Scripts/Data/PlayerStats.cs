@@ -23,6 +23,9 @@ public class PlayerStats : ScriptableObject
     public float AirControlFactor      = 0.4f;
     [Range(0f, 1f)] public float AirJumpRedirectControlFactor = 1f;
     [Min(0f)] public float AirJumpRedirectDuration            = 0.2f;
+    [Min(0f)] public float DashSpeed                         = 28f;
+    [Min(0f)] public float DashDuration                      = 0.18f;
+    [Min(0f)] public float DashCooldown                      = 0.5f;
     public float GroundCheckDistance   = 0.12f;
 
     [Header("Look")]

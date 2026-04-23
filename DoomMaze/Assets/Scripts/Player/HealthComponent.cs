@@ -98,11 +98,18 @@ public class HealthComponent : MonoBehaviour, IDamageable
     }
 
     /// <summary>Restore HP, clamped to <see cref="MaxHealth"/>.</summary>
-    public void Heal(int amount)
+    public int Heal(int amount)
     {
-        if (!IsAlive) return;
+        if (!IsAlive || amount <= 0)
+            return 0;
+
+        int previousHealth = CurrentHealth;
 
         CurrentHealth = Mathf.Clamp(CurrentHealth + amount, 0, _maxHealth);
+        int restoredAmount = CurrentHealth - previousHealth;
+
+        if (restoredAmount <= 0)
+            return 0;
 
         if (_isPlayer)
         {
@@ -111,7 +118,16 @@ public class HealthComponent : MonoBehaviour, IDamageable
                 CurrentHealth = CurrentHealth,
                 MaxHealth     = _maxHealth
             });
+
+            bool isLow = (float)CurrentHealth / _maxHealth <= LOW_HEALTH_THRESHOLD;
+            if (isLow != _wasLowHealth)
+            {
+                _wasLowHealth = isLow;
+                EventBus<PlayerLowHealthEvent>.Raise(new PlayerLowHealthEvent { IsLow = isLow });
+            }
         }
+
+        return restoredAmount;
     }
 
     /// <summary>Instantly kills this entity.</summary>

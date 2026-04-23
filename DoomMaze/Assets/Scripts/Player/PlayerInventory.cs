@@ -19,13 +19,24 @@ public class PlayerInventory : MonoBehaviour
     }
 
     /// <summary>Adds <paramref name="amount"/> ammo of <paramref name="ammoType"/>.</summary>
-    public void AddAmmo(string ammoType, int amount)
+    public int AddAmmo(string ammoType, int amount, int maxCarryCount = int.MaxValue)
     {
+        if (string.IsNullOrEmpty(ammoType) || amount <= 0)
+            return 0;
+
         if (!_ammoCounts.ContainsKey(ammoType))
             _ammoCounts[ammoType] = 0;
 
-        _ammoCounts[ammoType] += amount;
+        int currentCount = _ammoCounts[ammoType];
+        int nextCount    = Mathf.Min(currentCount + amount, maxCarryCount);
+        int addedAmount  = nextCount - currentCount;
+
+        if (addedAmount <= 0)
+            return 0;
+
+        _ammoCounts[ammoType] = nextCount;
         RaiseInventoryChanged();
+        return addedAmount;
     }
 
     /// <summary>

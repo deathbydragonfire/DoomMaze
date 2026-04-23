@@ -11,6 +11,7 @@ public class PlayerCombat : MonoBehaviour
 {
     /// <summary>Currently active weapon slot index (0-based).</summary>
     public int ActiveWeaponSlot { get; private set; }
+    public IWeapon ActiveWeapon => _activeWeapon;
 
     private IWeapon      _activeWeapon;
     private MeleeWeapon  _quickMeleeWeapon;
@@ -116,6 +117,7 @@ public class PlayerCombat : MonoBehaviour
     private void OnFireCanceled(InputAction.CallbackContext context)
     {
         _isFiring = false;
+        _activeWeapon?.StopFiring();
     }
 
     private void OnAltFirePerformed(InputAction.CallbackContext context)

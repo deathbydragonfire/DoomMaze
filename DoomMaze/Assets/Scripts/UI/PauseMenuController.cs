@@ -15,6 +15,7 @@ public class PauseMenuController : MonoBehaviour
         if (_canvasGroup   == null) _canvasGroup = GetComponent<CanvasGroup>();
         if (_settingsPanel == null) Debug.LogError("[PauseMenuController] _settingsPanel is not assigned.");
 
+        MenuButtonHoverEffect.AttachToButtons(transform);
         SetVisible(false);
     }
 

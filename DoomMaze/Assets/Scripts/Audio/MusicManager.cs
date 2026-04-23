@@ -43,13 +43,13 @@ public class MusicManager : MonoBehaviour
         _inactiveSource = _musicSourceB;
     }
 
-    private void Start()
+    private void OnEnable()
     {
         EventBus<MusicZoneChangedEvent>.Subscribe(OnMusicZoneChanged);
         EventBus<GameStateChangedEvent>.Subscribe(OnGameStateChanged);
     }
 
-    private void OnDestroy()
+    private void OnDisable()
     {
         EventBus<MusicZoneChangedEvent>.Unsubscribe(OnMusicZoneChanged);
         EventBus<GameStateChangedEvent>.Unsubscribe(OnGameStateChanged);

@@ -47,15 +47,25 @@ public class AudioManager : MonoBehaviour
     /// <summary>Plays a single clip on the SFX source. No-ops if clip is null.</summary>
     public void PlaySfx(AudioClip clip)
     {
+        PlaySfx(clip, 1f);
+    }
+
+    public void PlaySfx(AudioClip clip, float volumeScale)
+    {
         if (clip == null) return;
-        _sfxSource.PlayOneShot(clip);
+        _sfxSource.PlayOneShot(clip, Mathf.Clamp01(volumeScale));
     }
 
     /// <summary>Picks a random clip from the array and plays it. No-ops if array is null or empty.</summary>
     public void PlaySfx(AudioClip[] clips)
     {
+        PlaySfx(clips, 1f);
+    }
+
+    public void PlaySfx(AudioClip[] clips, float volumeScale)
+    {
         if (clips == null || clips.Length == 0) return;
-        PlaySfx(clips[Random.Range(0, clips.Length)]);
+        PlaySfx(clips[Random.Range(0, clips.Length)], volumeScale);
     }
 
     /// <summary>Plays a clip on the UI source.</summary>

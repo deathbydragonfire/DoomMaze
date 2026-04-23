@@ -15,20 +15,20 @@ public interface IAttackModule
 }
 
 /// <summary>
-/// Melee attack module. Uses <see cref="Physics.OverlapSphereNonAlloc"/> to hit
-/// <see cref="IDamageable"/> targets within <see cref="EnemyData.AttackRange"/>.
-/// Reads all stats from the shared <see cref="EnemyData"/> asset.
+/// Melee attack module that validates reach against the cached player collider.
+/// This avoids false negatives from the grunt's own colliders filling overlap queries.
 /// </summary>
 public class MeleeAttackModule : MonoBehaviour, IAttackModule
 {
-    private const int OVERLAP_BUFFER_SIZE = 4;
-    private readonly Collider[] _overlapBuffer = new Collider[OVERLAP_BUFFER_SIZE];
+    private const float ATTACK_HEIGHT_OFFSET = 0.9f;
+    private const float ATTACK_FORWARD_BIAS  = 0.45f;
 
-    private EnemyData _data;
-    private EnemyBase _enemyBase;
-    private float     _attackTimer;
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    private EnemyData   _data;
+    private EnemyBase   _enemyBase;
+    private Transform   _playerTransform;
+    private Collider    _playerCollider;
+    private IDamageable _playerDamageable;
+    private float       _attackTimer;
 
     private void Awake()
     {
@@ -41,10 +41,10 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     {
         _data = _enemyBase != null ? _enemyBase.Data : null;
         if (_data == null)
-            Debug.LogError("[MeleeAttackModule] EnemyData is null — assign EnemyData to EnemyBase.");
-    }
+            Debug.LogError("[MeleeAttackModule] EnemyData is null. Assign EnemyData to EnemyBase.");
 
-    // ── IAttackModule ─────────────────────────────────────────────────────────
+        CachePlayerReferences(logWarnings: true);
+    }
 
     /// <inheritdoc/>
     public void OnAttackEnter()
@@ -58,6 +58,8 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     {
         if (_data == null) return;
 
+        CachePlayerReferences(logWarnings: false);
+
         _attackTimer -= Time.deltaTime;
         if (_attackTimer <= 0f)
         {
@@ -66,34 +68,88 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
         }
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
-
     private void PerformAttack()
     {
-        int hitCount = Physics.OverlapSphereNonAlloc(transform.position, _data.AttackRange, _overlapBuffer);
+        CachePlayerReferences(logWarnings: false);
 
-        for (int i = 0; i < hitCount; i++)
+        if (_data == null || _playerTransform == null || _playerDamageable == null || !_playerDamageable.IsAlive)
+            return;
+
+        Vector3 attackOrigin = GetAttackOrigin();
+        if (!IsPlayerInRange(attackOrigin))
+            return;
+
+        _playerDamageable.TakeDamage(new DamageInfo
         {
-            if (_overlapBuffer[i].gameObject == gameObject) continue;
+            Amount = _data.AttackDamage,
+            Type   = _data.AttackDamageType,
+            Source = gameObject
+        });
 
-            IDamageable damageable = _overlapBuffer[i].GetComponent<IDamageable>();
-            damageable?.TakeDamage(new DamageInfo
-            {
-                Amount = _data.AttackDamage,
-                Type   = _data.AttackDamageType,
-                Source = gameObject
-            });
+        AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+    }
+
+    private void CachePlayerReferences(bool logWarnings)
+    {
+        if (_playerTransform == null && _enemyBase != null)
+            _playerTransform = _enemyBase.PlayerTransform;
+
+        if (_playerTransform == null)
+        {
+            if (logWarnings)
+                Debug.LogWarning("[MeleeAttackModule] Player transform not cached on EnemyBase.");
+            return;
         }
 
-        AudioManager.Instance.PlaySfx(_data.AttackSound);
+        if (_playerDamageable == null)
+            _playerDamageable = _playerTransform.GetComponentInParent<IDamageable>();
+
+        if (_playerCollider == null)
+            _playerCollider = _playerTransform.GetComponent<Collider>();
+
+        if (logWarnings && _playerDamageable == null)
+            Debug.LogWarning("[MeleeAttackModule] No IDamageable found on the player hierarchy.");
+
+        if (logWarnings && _playerCollider == null)
+            Debug.LogWarning("[MeleeAttackModule] No Collider found on the player root. Falling back to transform distance checks.");
+    }
+
+    private Vector3 GetAttackOrigin()
+    {
+        Vector3 attackOrigin = transform.position + Vector3.up * ATTACK_HEIGHT_OFFSET;
+        Vector3 toPlayer     = _playerTransform.position - transform.position;
+        toPlayer.y = 0f;
+
+        if (toPlayer.sqrMagnitude > 0.0001f)
+            attackOrigin += toPlayer.normalized * Mathf.Min(ATTACK_FORWARD_BIAS, _data.AttackRange * 0.5f);
+
+        return attackOrigin;
+    }
+
+    private bool IsPlayerInRange(Vector3 attackOrigin)
+    {
+        float attackRangeSqr = _data.AttackRange * _data.AttackRange;
+
+        if (_playerCollider != null)
+        {
+            Vector3 closestPoint = _playerCollider.ClosestPoint(attackOrigin);
+            return (closestPoint - attackOrigin).sqrMagnitude <= attackRangeSqr;
+        }
+
+        return (_playerTransform.position - attackOrigin).sqrMagnitude <= attackRangeSqr;
     }
 
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
         if (_data == null) return;
+
+        Vector3 attackOrigin = transform.position
+                             + Vector3.up * ATTACK_HEIGHT_OFFSET
+                             + transform.forward * Mathf.Min(ATTACK_FORWARD_BIAS, _data.AttackRange * 0.5f);
+
         UnityEditor.Handles.color = new Color(1f, 0.2f, 0.2f, 0.25f);
-        UnityEditor.Handles.DrawSolidDisc(transform.position, Vector3.up, _data.AttackRange);
+        UnityEditor.Handles.DrawSolidDisc(attackOrigin, Vector3.up, _data.AttackRange);
     }
 #endif
 }

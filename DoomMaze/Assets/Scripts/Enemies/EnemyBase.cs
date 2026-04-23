@@ -127,7 +127,7 @@ public class EnemyBase : MonoBehaviour
         _agent.isStopped = true;
         _hurtTimer = duration;
         _billboard?.SetAnimation(_data?.HurtSprites, loop: false);
-        AudioManager.Instance?.PlaySfx(_data?.HurtSound);
+        AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
     }
 
     // ── State Machine ─────────────────────────────────────────────────────────
@@ -218,7 +218,7 @@ public class EnemyBase : MonoBehaviour
                 _agent.isStopped = true;
                 _alertTimer = ALERT_DWELL_TIME;
                 _billboard?.SetAnimation(_data?.IdleSprites);
-                AudioManager.Instance?.PlaySfx(_data.AggroSound);
+                AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
             case EnemyState.Chase:
                 _agent.isStopped = false;
@@ -237,14 +237,14 @@ public class EnemyBase : MonoBehaviour
                 _agent.isStopped = true;
                 _hurtTimer = HURT_RECOVERY_TIME;
                 _billboard?.SetAnimation(_data?.HurtSprites, loop: false);
-                AudioManager.Instance?.PlaySfx(_data.HurtSound);
+                AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
                 break;
 
             case EnemyState.Dead:
                 _agent.isStopped  = true;
                 _agent.enabled    = false;
                 _billboard?.SetAnimationOneShot(_data?.DeathSprites, OnDeathAnimationComplete);
-                AudioManager.Instance?.PlaySfx(_data.DeathSound);
+                AudioManager.Instance?.PlaySfx(_data != null ? _data.GetDeathClip() : null, _data != null ? _data.DeathVolume : 1f);
                 break;
         }
     }
@@ -266,7 +266,7 @@ public class EnemyBase : MonoBehaviour
 
     private void OnHurt(DamageInfo info)
     {
-        if (CurrentState == EnemyState.Dead || CurrentState == EnemyState.Hurt) return;
+        if (CurrentState == EnemyState.Dead) return;
 
         _hitFlash?.Flash();
 
@@ -277,7 +277,8 @@ public class EnemyBase : MonoBehaviour
             CurrentHealth = _healthComponent.CurrentHealth
         });
 
-        SetState(EnemyState.Hurt);
+        if (CurrentState != EnemyState.Hurt)
+            SetState(EnemyState.Hurt);
     }
 
     // ── Death Flow ────────────────────────────────────────────────────────────
@@ -293,10 +294,14 @@ public class EnemyBase : MonoBehaviour
         if (_data == null || _data.PossibleDrops == null || _data.PossibleDrops.Length == 0) return;
         if (Random.value > _data.DropChance) return;
 
-        // TODO Phase 6: Replace Instantiate with ObjectPool<T>.Get()
-        GameObject drop = _data.PossibleDrops[Random.Range(0, _data.PossibleDrops.Length)];
-        if (drop != null)
-            Instantiate(drop, transform.position, Quaternion.identity);
+        GameObject dropPrefab = _data.PossibleDrops[Random.Range(0, _data.PossibleDrops.Length)];
+        if (dropPrefab == null)
+            return;
+
+        GameObject dropInstance = Instantiate(dropPrefab, transform.position, Quaternion.identity);
+        PickupDropMotion dropMotion = dropInstance.GetComponent<PickupDropMotion>();
+        if (dropMotion != null)
+            dropMotion.DropFrom(transform.position);
     }
 
     // ── Debug ─────────────────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ public class HypeVolumeController : MonoBehaviour
     [SerializeField] private float _hitFallTime   = 0.12f;
     [SerializeField] private float _vigRiseTime   = 0.03f;
     [SerializeField] private float _vigFallTime   = 0.08f;
+    [SerializeField] private float _dashRiseTime  = 0.02f;
+    [SerializeField] private float _dashFallTime  = 0.16f;
 
     private Volume              _volume;
     private VolumeProfile       _profile;
@@ -29,6 +31,7 @@ public class HypeVolumeController : MonoBehaviour
     private Coroutine _killRoutine;
     private Coroutine _contrastRoutine;
     private Coroutine _vignetteRoutine;
+    private Coroutine _dashRoutine;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -81,6 +84,14 @@ public class HypeVolumeController : MonoBehaviour
         if (_vignetteRoutine != null)
             StopCoroutine(_vignetteRoutine);
         _vignetteRoutine = StartCoroutine(PulseVignetteRoutine(intensity));
+    }
+
+    /// <summary>Dash burst with edge smear and tunnel-vision punch.</summary>
+    public void PulseDash(float intensity = 1f)
+    {
+        if (_dashRoutine != null)
+            StopCoroutine(_dashRoutine);
+        _dashRoutine = StartCoroutine(PulseDashRoutine(intensity));
     }
 
     // ── Coroutines ────────────────────────────────────────────────────────────
@@ -140,6 +151,43 @@ public class HypeVolumeController : MonoBehaviour
 
         _vignette.intensity.value = 0f;
         _vignetteRoutine = null;
+    }
+
+    private IEnumerator PulseDashRoutine(float intensity)
+    {
+        _chromaticAberration.active                 = true;
+        _chromaticAberration.intensity.overrideState = true;
+        _lensDistortion.active                      = true;
+        _lensDistortion.intensity.overrideState     = true;
+        _vignette.active                            = true;
+        _vignette.intensity.overrideState           = true;
+
+        float caTarget = Mathf.Clamp01(0.35f * intensity);
+        float ldTarget = Mathf.Clamp(-0.45f * intensity, -1f, 0f);
+        float vigTarget = Mathf.Clamp01(0.22f * intensity);
+
+        yield return LerpFloats(
+            v =>
+            {
+                _chromaticAberration.intensity.value = v * caTarget;
+                _lensDistortion.intensity.value = v * ldTarget;
+                _vignette.intensity.value = v * vigTarget;
+            },
+            0f, 1f, _dashRiseTime);
+
+        yield return LerpFloats(
+            v =>
+            {
+                _chromaticAberration.intensity.value = v * caTarget;
+                _lensDistortion.intensity.value = v * ldTarget;
+                _vignette.intensity.value = v * vigTarget;
+            },
+            1f, 0f, _dashFallTime);
+
+        _chromaticAberration.intensity.value = 0f;
+        _lensDistortion.intensity.value = 0f;
+        _vignette.intensity.value = 0f;
+        _dashRoutine = null;
     }
 
     // ── Private ───────────────────────────────────────────────────────────────

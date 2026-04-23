@@ -8,16 +8,20 @@ public class WeaponPickup : PickupBase
 {
     [SerializeField] private WeaponData _weaponData;
 
-    protected override void ExecutePickup(PlayerInventory inventory)
+    protected override bool ExecutePickup(PlayerInventory inventory)
     {
         if (_weaponData == null)
         {
             Debug.LogWarning($"[WeaponPickup] WeaponData is not assigned on {gameObject.name}.");
-            return;
+            return false;
         }
+
+        if (inventory.HasItem(_weaponData.WeaponId))
+            return false;
 
         inventory.AddItem(_weaponData.WeaponId);
 
         EventBus<WeaponPickedUpEvent>.Raise(new WeaponPickedUpEvent { WeaponData = _weaponData });
+        return true;
     }
 }

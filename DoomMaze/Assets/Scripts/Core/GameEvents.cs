@@ -59,7 +59,11 @@ public struct SfxRequestEvent { public UnityEngine.AudioClip Clip; }
 public struct MusicTrackEvent { public string TrackId; }
 
 // ── Phase 8: UI events ────────────────────────────────────────────────────────
-public struct PickupFeedMessageEvent { public string Message; }
+public struct PickupFeedMessageEvent
+{
+    public string            Message;
+    public UnityEngine.Color Tint;
+}
 
 // ── Camera events ─────────────────────────────────────────────────────────────
 public struct CameraShakeEvent { public float Magnitude; public float Duration; }
@@ -76,5 +80,6 @@ public struct GrappleReleasedEvent     { }
 public struct KillStreakEvent          { public int StreakCount; }
 public struct KillConfirmedEvent       { public UnityEngine.Vector3 WorldPosition; public bool IsStreakKill; }
 public struct PlayerLandedEvent        { public float FallSpeed; }
+public struct PlayerDashedEvent        { public UnityEngine.Vector3 Direction; public float Duration; public float Speed; }
 public struct PlayerSprintChangedEvent { public bool IsSprinting; }
 public struct MeleeHitEvent            { public int HitCount; }

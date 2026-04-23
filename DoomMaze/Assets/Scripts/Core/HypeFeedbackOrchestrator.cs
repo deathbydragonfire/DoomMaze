@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -15,13 +16,13 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
     [Header("Streak Settings")]
     [SerializeField] private float _streakWindowSeconds = 4f;
 
-    [Header("Shake — per tier (index 0 = single kill)")]
+    [Header("Shake - per tier (index 0 = single kill)")]
     [SerializeField] private float[] _streakShakeMagnitudes = { 0.08f, 0.14f, 0.20f, 0.28f };
     [SerializeField] private float[] _streakShakeDurations  = { 0.10f, 0.15f, 0.18f, 0.22f };
 
-    [Header("Punch — per tier")]
-    [SerializeField] private float[] _streakPunchAngles     = { 1.5f, 2.5f, 3.5f, 5.0f };
-    [SerializeField] private float   _punchDuration         = 0.08f;
+    [Header("Punch - per tier")]
+    [SerializeField] private float[] _streakPunchAngles = { 1.5f, 2.5f, 3.5f, 5.0f };
+    [SerializeField] private float   _punchDuration     = 0.08f;
 
     [Header("Hit Feedback")]
     [SerializeField] private float _hitShakeMagnitude = 0.04f;
@@ -31,10 +32,25 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
     [SerializeField] private float _landSpeedThreshold = 4f;
     [SerializeField] private float _landShakeScale     = 0.015f;
 
-    private int   _streakCount;
-    private float _streakTimer;
+    [Header("Dash Feedback")]
+    [SerializeField] private float _dashShakeMagnitude = 0.025f;
+    [SerializeField] private float _dashShakeDuration  = 0.08f;
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    [Header("Melee Hit Stop")]
+    [SerializeField] private bool  _enableMeleeHitStop   = true;
+    [SerializeField] private float _meleeHitStopScale    = 0.03f;
+    [SerializeField] private float _meleeHitStopDuration = 0.04f;
+    [SerializeField] private float _meleeHitShakeBoost   = 0.015f;
+
+    private int       _streakCount;
+    private float     _streakTimer;
+    private float     _baseFixedDeltaTime;
+    private Coroutine _meleeHitStopRoutine;
+
+    private void Awake()
+    {
+        _baseFixedDeltaTime = Time.fixedDeltaTime;
+    }
 
     private void OnEnable()
     {
@@ -42,6 +58,9 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         EventBus<EnemyDamagedEvent>.Subscribe(OnEnemyDamaged);
         EventBus<WeaponFiredEvent>.Subscribe(OnWeaponFired);
         EventBus<PlayerLandedEvent>.Subscribe(OnPlayerLanded);
+        EventBus<PlayerDashedEvent>.Subscribe(OnPlayerDashed);
+        EventBus<MeleeHitEvent>.Subscribe(OnMeleeHit);
+        EventBus<PauseChangedEvent>.Subscribe(OnPauseChanged);
     }
 
     private void OnDisable()
@@ -50,6 +69,17 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         EventBus<EnemyDamagedEvent>.Unsubscribe(OnEnemyDamaged);
         EventBus<WeaponFiredEvent>.Unsubscribe(OnWeaponFired);
         EventBus<PlayerLandedEvent>.Unsubscribe(OnPlayerLanded);
+        EventBus<PlayerDashedEvent>.Unsubscribe(OnPlayerDashed);
+        EventBus<MeleeHitEvent>.Unsubscribe(OnMeleeHit);
+        EventBus<PauseChangedEvent>.Unsubscribe(OnPauseChanged);
+
+        if (_meleeHitStopRoutine != null)
+        {
+            StopCoroutine(_meleeHitStopRoutine);
+            _meleeHitStopRoutine = null;
+        }
+
+        RestoreTimeScale();
     }
 
     private void Update()
@@ -60,8 +90,6 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         if (_streakTimer <= 0f)
             ResetStreak();
     }
-
-    // ── EventBus Handlers ─────────────────────────────────────────────────────
 
     private void OnEnemyDied(EnemyDiedEvent e)
     {
@@ -130,7 +158,76 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         VolumeController?.PulseContrast(0.3f);
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
+    private void OnPlayerDashed(PlayerDashedEvent e)
+    {
+        EventBus<CameraShakeEvent>.Raise(new CameraShakeEvent
+        {
+            Magnitude = _dashShakeMagnitude,
+            Duration  = _dashShakeDuration
+        });
+
+        float dashIntensity = Mathf.Clamp01(e.Speed / 28f);
+        VolumeController?.PulseDash(Mathf.Lerp(0.8f, 1.2f, dashIntensity));
+    }
+
+    private void OnMeleeHit(MeleeHitEvent e)
+    {
+        EventBus<CameraShakeEvent>.Raise(new CameraShakeEvent
+        {
+            Magnitude = _hitShakeMagnitude + _meleeHitShakeBoost,
+            Duration  = _hitShakeDuration
+        });
+
+        if (!_enableMeleeHitStop || PauseManager.Instance != null && PauseManager.Instance.IsPaused)
+            return;
+
+        if (_meleeHitStopRoutine != null)
+            StopCoroutine(_meleeHitStopRoutine);
+
+        _meleeHitStopRoutine = StartCoroutine(MeleeHitStopRoutine());
+    }
+
+    private void OnPauseChanged(PauseChangedEvent e)
+    {
+        if (!e.IsPaused) return;
+
+        if (_meleeHitStopRoutine != null)
+        {
+            StopCoroutine(_meleeHitStopRoutine);
+            _meleeHitStopRoutine = null;
+        }
+
+        Time.fixedDeltaTime = _baseFixedDeltaTime;
+    }
+
+    private IEnumerator MeleeHitStopRoutine()
+    {
+        float clampedScale = Mathf.Clamp(_meleeHitStopScale, 0f, 1f);
+        float clampedDuration = Mathf.Max(0f, _meleeHitStopDuration);
+
+        Time.timeScale = clampedScale;
+        Time.fixedDeltaTime = _baseFixedDeltaTime * Mathf.Max(clampedScale, 0.01f);
+
+        float elapsed = 0f;
+        while (elapsed < clampedDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        RestoreTimeScale();
+        _meleeHitStopRoutine = null;
+    }
+
+    private void RestoreTimeScale()
+    {
+        Time.fixedDeltaTime = _baseFixedDeltaTime;
+
+        if (PauseManager.Instance != null && PauseManager.Instance.IsPaused)
+            Time.timeScale = 0f;
+        else
+            Time.timeScale = 1f;
+    }
 
     private void ResetStreak()
     {

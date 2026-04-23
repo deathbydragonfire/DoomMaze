@@ -14,9 +14,17 @@ public class PlayerMovement : MonoBehaviour
 {
     [SerializeField] private PlayerStats _stats;
     [SerializeField] private Transform   _cameraTransform;
+    [Header("Audio")]
+    [SerializeField] private AudioClip[] _jumpSounds;
+    [SerializeField] private AudioClip[] _landingSounds;
+    [SerializeField] private AudioClip[] _dashSounds;
+    [Range(0f, 1f)] [SerializeField] private float _jumpSoundVolume    = 1f;
+    [Range(0f, 1f)] [SerializeField] private float _landingSoundVolume = 1f;
+    [Range(0f, 1f)] [SerializeField] private float _dashSoundVolume    = 1f;
 
     public MovementState CurrentState      { get; private set; }
     public bool          IsGrounded        { get; private set; }
+    public bool          IsDashing         => _isDashing;
     public float         CurrentSpeedRatio { get; private set; }
     public Vector3       Velocity          { get; private set; }
 
@@ -29,7 +37,6 @@ public class PlayerMovement : MonoBehaviour
     private Vector2 _moveInput;
     private Vector2 _lookInput;
     private bool    _isSprinting;
-    private bool    _isCrouching;
     private bool    _jumpRequested;
     private bool    _queuedAirJump;
 
@@ -45,6 +52,10 @@ public class PlayerMovement : MonoBehaviour
     private float _peakFallSpeed;
     private int   _remainingAirJumps;
     private float _airJumpRedirectTimer;
+    private bool    _isDashing;
+    private float   _dashTimer;
+    private float   _dashCooldownTimer;
+    private Vector3 _dashDirection;
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -79,7 +90,9 @@ public class PlayerMovement : MonoBehaviour
         EventBus<NoclipChangedEvent>.Unsubscribe(OnNoclipChanged);
 
         if (InputManager.Instance != null && _inputBound)
+        {
             InputManager.Instance.Controls.Player.Jump.performed -= OnJumpPerformed;
+        }
     }
 
     private void TryBindInput()
@@ -102,6 +115,7 @@ public class PlayerMovement : MonoBehaviour
         }
 
         GatherInput();
+        UpdateDash();
         ApplyGravity();
         ApplyMovement();
         ApplyLook();
@@ -116,7 +130,8 @@ public class PlayerMovement : MonoBehaviour
         _moveInput   = InputManager.Instance.Controls.Player.Move.ReadValue<Vector2>();
         _lookInput   = InputManager.Instance.Controls.Player.Look.ReadValue<Vector2>();
         _isSprinting = InputManager.Instance.Controls.Player.Sprint.IsPressed();
-        _isCrouching = InputManager.Instance.Controls.Player.Crouch.IsPressed();
+        if (InputManager.Instance.Controls.Player.Crouch.WasPressedThisFrame())
+            TryStartDash();
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext context)
@@ -138,6 +153,19 @@ public class PlayerMovement : MonoBehaviour
         _airJumpRedirectTimer  = GetAirJumpRedirectDuration();
     }
 
+    private void UpdateDash()
+    {
+        if (_dashCooldownTimer > 0f)
+            _dashCooldownTimer = Mathf.Max(0f, _dashCooldownTimer - Time.deltaTime);
+
+        if (_isDashing)
+        {
+            _dashTimer -= Time.deltaTime;
+            if (_dashTimer <= 0f)
+                _isDashing = false;
+        }
+    }
+
     // ── Movement ──────────────────────────────────────────────────────────────
 
     private void ApplyNoclipMovement()
@@ -151,14 +179,16 @@ public class PlayerMovement : MonoBehaviour
     {
         float speed = _stats.WalkSpeed;
 
-        if (_isSprinting && !_isCrouching)
+        if (_isSprinting)
             speed *= _stats.SprintMultiplier;
-        else if (_isCrouching)
-            speed *= _stats.CrouchSpeedMultiplier;
 
         Vector3 localMove = new Vector3(_moveInput.x, 0f, _moveInput.y) * speed;
 
-        if (!IsGrounded)
+        if (_isDashing)
+        {
+            localMove = transform.InverseTransformDirection(_dashDirection * _stats.DashSpeed);
+        }
+        else if (!IsGrounded)
             localMove *= GetCurrentAirControlFactor();
 
         Vector3 worldMove = transform.TransformDirection(localMove);
@@ -181,6 +211,7 @@ public class PlayerMovement : MonoBehaviour
         if (IsGrounded && _wasAirborne)
         {
             EventBus<PlayerLandedEvent>.Raise(new PlayerLandedEvent { FallSpeed = _peakFallSpeed });
+            PlayLandingSound();
             _peakFallSpeed = 0f;
         }
 
@@ -192,6 +223,12 @@ public class PlayerMovement : MonoBehaviour
 
     private void ApplyGravity()
     {
+        if (_isDashing)
+        {
+            _jumpRequested = false;
+            _queuedAirJump = false;
+        }
+
         if (IsGrounded && _verticalVelocity < 0f)
             _verticalVelocity = -2f; // keep pressed against ground
 
@@ -199,6 +236,7 @@ public class PlayerMovement : MonoBehaviour
         {
             // v = sqrt(2 * g * h)
             _verticalVelocity = Mathf.Sqrt(2f * Mathf.Abs(Physics.gravity.y) * _stats.GravityScale * _stats.JumpHeight);
+            PlayJumpSound();
             _jumpRequested    = false;
             _queuedAirJump    = false;
             return;
@@ -211,6 +249,45 @@ public class PlayerMovement : MonoBehaviour
 
         _jumpRequested = false;
         _queuedAirJump = false;
+    }
+
+    private void TryStartDash()
+    {
+        if (!_canMove || _isNoclip || _stats == null) return;
+        if (_isDashing || _dashCooldownTimer > 0f) return;
+        if (!TryGetDashDirection(out _dashDirection)) return;
+
+        _isDashing = true;
+        _dashTimer = _stats.DashDuration;
+        _dashCooldownTimer = _stats.DashCooldown;
+        PlayDashSound();
+
+        EventBus<PlayerDashedEvent>.Raise(new PlayerDashedEvent
+        {
+            Direction = _dashDirection,
+            Duration  = _stats.DashDuration,
+            Speed     = _stats.DashSpeed
+        });
+    }
+
+    private bool TryGetDashDirection(out Vector3 dashDirection)
+    {
+        Vector3 localMove = new Vector3(_moveInput.x, 0f, _moveInput.y);
+        if (localMove.sqrMagnitude > 0.01f)
+        {
+            dashDirection = transform.TransformDirection(localMove.normalized);
+            return true;
+        }
+
+        Vector3 horizontalVelocity = new Vector3(Velocity.x, 0f, Velocity.z);
+        if (horizontalVelocity.sqrMagnitude > 0.01f)
+        {
+            dashDirection = horizontalVelocity.normalized;
+            return true;
+        }
+
+        dashDirection = Vector3.zero;
+        return false;
     }
 
     private float GetCurrentAirControlFactor()
@@ -242,6 +319,21 @@ public class PlayerMovement : MonoBehaviour
         return _stats.AirJumpRedirectDuration <= 0f ? 0.2f : _stats.AirJumpRedirectDuration;
     }
 
+    private void PlayJumpSound()
+    {
+        AudioManager.Instance?.PlaySfx(_jumpSounds, _jumpSoundVolume);
+    }
+
+    private void PlayLandingSound()
+    {
+        AudioManager.Instance?.PlaySfx(_landingSounds, _landingSoundVolume);
+    }
+
+    private void PlayDashSound()
+    {
+        AudioManager.Instance?.PlaySfx(_dashSounds, _dashSoundVolume);
+    }
+
     // ── Look ──────────────────────────────────────────────────────────────────
 
     private void ApplyLook()
@@ -263,19 +355,19 @@ public class PlayerMovement : MonoBehaviour
     private void UpdateState()
     {
         bool isMoving    = _moveInput.sqrMagnitude > 0.01f;
-        bool isSprinting = _isSprinting && isMoving && !_isCrouching;
+        bool isSprinting = _isSprinting && isMoving;
 
         if (!IsGrounded)
         {
             CurrentState = _verticalVelocity > 0f ? MovementState.Jump : MovementState.Fall;
         }
+        else if (_isDashing)
+        {
+            CurrentState = MovementState.Sprint;
+        }
         else if (_wasGrounded == false)
         {
             CurrentState = MovementState.Landing;
-        }
-        else if (_isCrouching)
-        {
-            CurrentState = isMoving ? MovementState.Crouch : MovementState.Idle;
         }
         else if (isSprinting)
         {
@@ -317,6 +409,11 @@ public class PlayerMovement : MonoBehaviour
         _isNoclip = e.IsActive;
         _characterController.enabled = !e.IsActive;
         if (e.IsActive)
+        {
             _verticalVelocity = 0f;
+            _isDashing = false;
+            _dashTimer = 0f;
+            _dashCooldownTimer = 0f;
+        }
     }
 }

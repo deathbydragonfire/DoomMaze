@@ -57,7 +57,7 @@ public class GiveWeaponsCommand : IDebugCommand
             {
                 AmmoTypeData ammoType = _ammoTypes[i];
                 if (ammoType != null)
-                    _playerInventory.AddAmmo(ammoType.AmmoId, ammoType.MaxCarryCount);
+                    _playerInventory.AddAmmo(ammoType.AmmoId, ammoType.MaxCarryCount, ammoType.MaxCarryCount);
             }
         }
 

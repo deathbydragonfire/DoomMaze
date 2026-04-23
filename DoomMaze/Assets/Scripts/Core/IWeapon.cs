@@ -16,6 +16,9 @@ public interface IWeapon
     /// <summary>Executes a primary fire action.</summary>
     void Fire();
 
+    /// <summary>Stops continuous primary-fire effects when the trigger is released or interrupted.</summary>
+    void StopFiring();
+
     /// <summary>Executes an alternate fire action. No-op by default.</summary>
     void AltFire();
 

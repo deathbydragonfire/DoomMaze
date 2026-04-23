@@ -91,7 +91,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
             });
         }
 
-        AudioManager.Instance.PlaySfx(_data.AttackSound);
+        AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
     }
 
 #if UNITY_EDITOR

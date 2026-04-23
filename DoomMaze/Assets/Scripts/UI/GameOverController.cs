@@ -14,6 +14,7 @@ public class GameOverController : MonoBehaviour
         if (_deathPanel   == null) Debug.LogError("[GameOverController] _deathPanel is not assigned.");
         if (_victoryPanel == null) Debug.LogError("[GameOverController] _victoryPanel is not assigned.");
 
+        MenuButtonHoverEffect.AttachToButtons(transform);
         SetPanelsActive(false, false);
     }
 

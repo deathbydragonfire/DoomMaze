@@ -7,12 +7,12 @@ public class ArmorPickup : PickupBase
 {
     [SerializeField] private ArmorPickupData _data;
 
-    protected override void ExecutePickup(PlayerInventory inventory)
+    protected override bool ExecutePickup(PlayerInventory inventory)
     {
         if (_data == null)
         {
             Debug.LogWarning($"[ArmorPickup] ArmorPickupData is not assigned on {gameObject.name}.");
-            return;
+            return false;
         }
 
         ArmorComponent armor = inventory.GetComponent<ArmorComponent>();
@@ -20,9 +20,13 @@ public class ArmorPickup : PickupBase
         if (armor == null)
         {
             Debug.LogWarning($"[ArmorPickup] No ArmorComponent found on player {inventory.gameObject.name}.");
-            return;
+            return false;
         }
 
+        if (armor.CurrentArmor >= armor.MaxArmor)
+            return false;
+
         armor.AddArmor(_data.ArmorAmount);
+        return true;
     }
 }

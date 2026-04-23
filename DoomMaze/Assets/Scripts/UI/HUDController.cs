@@ -15,7 +15,9 @@ public class HUDController : MonoBehaviour
     [SerializeField] private DamageFlashWidget _damageFlashWidget;
     [SerializeField] private SuperMeterWidget  _superMeterWidget;
 
-    private Canvas _canvas;
+    private Canvas          _canvas;
+    private PlayerCombat    _playerCombat;
+    private PlayerInventory _playerInventory;
 
     private void Awake()
     {
@@ -39,6 +41,7 @@ public class HUDController : MonoBehaviour
         EventBus<AmmoChangedEvent>.Subscribe(OnAmmoChanged);
         EventBus<WeaponSwitchedEvent>.Subscribe(OnWeaponSwitched);
         EventBus<InventoryChangedEvent>.Subscribe(OnInventoryChanged);
+        EventBus<PickupCollectedEvent>.Subscribe(OnPickupCollected);
         EventBus<PlayerLowHealthEvent>.Subscribe(OnLowHealth);
         EventBus<GameStateChangedEvent>.Subscribe(OnGameStateChanged);
     }
@@ -51,6 +54,7 @@ public class HUDController : MonoBehaviour
         EventBus<AmmoChangedEvent>.Unsubscribe(OnAmmoChanged);
         EventBus<WeaponSwitchedEvent>.Unsubscribe(OnWeaponSwitched);
         EventBus<InventoryChangedEvent>.Unsubscribe(OnInventoryChanged);
+        EventBus<PickupCollectedEvent>.Unsubscribe(OnPickupCollected);
         EventBus<PlayerLowHealthEvent>.Unsubscribe(OnLowHealth);
         EventBus<GameStateChangedEvent>.Unsubscribe(OnGameStateChanged);
     }
@@ -84,11 +88,18 @@ public class HUDController : MonoBehaviour
     public void OnWeaponSwitched(WeaponSwitchedEvent e)
     {
         _weaponIconWidget?.SetWeapon(e.NewWeapon);
+        RefreshActiveWeaponAmmo();
     }
 
-    /// <summary>Reserved for future inventory widget updates.</summary>
+    /// <summary>Refreshes the active weapon ammo display when carried ammo changes.</summary>
     public void OnInventoryChanged(InventoryChangedEvent e)
     {
+        RefreshActiveWeaponAmmo();
+    }
+
+    public void OnPickupCollected(PickupCollectedEvent e)
+    {
+        _damageFlashWidget?.FlashPickup();
     }
 
     /// <summary>Toggles the low-health pulse warning on the health widget.</summary>
@@ -104,5 +115,34 @@ public class HUDController : MonoBehaviour
         {
             _canvas.enabled = e.NewState == GameState.Playing;
         }
+    }
+
+    private void ResolvePlayerReferences()
+    {
+        if (_playerCombat != null && _playerInventory != null)
+            return;
+
+        GameObject player = GameObject.FindWithTag("Player");
+        if (player == null)
+            return;
+
+        _playerCombat    = player.GetComponent<PlayerCombat>();
+        _playerInventory = player.GetComponent<PlayerInventory>();
+    }
+
+    private void RefreshActiveWeaponAmmo()
+    {
+        ResolvePlayerReferences();
+
+        if (_playerCombat?.ActiveWeapon?.Data == null || _playerInventory == null)
+            return;
+
+        WeaponData weaponData = _playerCombat.ActiveWeapon.Data;
+        string ammoTypeId     = weaponData.AmmoTypeId;
+
+        _ammoWidget?.SetAmmo(
+            ammoTypeId,
+            _playerCombat.ActiveWeapon.CurrentAmmo,
+            string.IsNullOrEmpty(ammoTypeId) ? 999 : _playerInventory.GetAmmo(ammoTypeId));
     }
 }

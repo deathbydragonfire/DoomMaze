@@ -6,14 +6,16 @@ using UnityEngine;
 /// </summary>
 public class HealthPickup : PickupBase
 {
+    private static readonly Color HealthFeedColor = new Color(0.45f, 1f, 0.62f, 1f);
+
     [SerializeField] private HealthPickupData _data;
 
-    protected override void ExecutePickup(PlayerInventory inventory)
+    protected override bool ExecutePickup(PlayerInventory inventory)
     {
         if (_data == null)
         {
             Debug.LogWarning($"[HealthPickup] HealthPickupData is not assigned on {gameObject.name}.");
-            return;
+            return false;
         }
 
         HealthComponent health = inventory.GetComponent<HealthComponent>();
@@ -21,12 +23,22 @@ public class HealthPickup : PickupBase
         if (health == null)
         {
             Debug.LogWarning($"[HealthPickup] No HealthComponent found on player {inventory.gameObject.name}.");
-            return;
+            return false;
         }
 
         if (health.CurrentHealth >= health.MaxHealth)
-            return;
+            return false;
 
-        health.Heal(_data.HealAmount);
+        int restoredAmount = health.Heal(_data.HealAmount);
+        if (restoredAmount <= 0)
+            return false;
+
+        EventBus<PickupFeedMessageEvent>.Raise(new PickupFeedMessageEvent
+        {
+            Message = $"+{restoredAmount} HEALTH",
+            Tint    = HealthFeedColor
+        });
+
+        return true;
     }
 }

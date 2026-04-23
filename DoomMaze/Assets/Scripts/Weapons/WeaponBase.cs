@@ -59,10 +59,15 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
     /// <inheritdoc/>
     public virtual void Fire()
     {
-        if (_isReloading) return;
+        if (_isReloading)
+        {
+            StopFiring();
+            return;
+        }
 
         if (CurrentAmmo <= 0)
         {
+            StopFiring();
             TryAutoReload();
             return;
         }
@@ -86,7 +91,22 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
         AudioManager.Instance?.PlaySfx(_data.FireSounds);
 
         if (CurrentAmmo <= 0)
+        {
             TryAutoReload();
+            StopFiring();
+        }
+    }
+
+    /// <inheritdoc/>
+    public virtual void StopFiring()
+    {
+        if (_fireStopCoroutine != null)
+        {
+            StopCoroutine(_fireStopCoroutine);
+            _fireStopCoroutine = null;
+        }
+
+        _spriteSequencer?.StopFiring();
     }
 
     /// <inheritdoc/>
@@ -116,12 +136,7 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
     public virtual void OnUnequip()
     {
         _isReloading = false;
-        if (_fireStopCoroutine != null)
-        {
-            StopCoroutine(_fireStopCoroutine);
-            _fireStopCoroutine = null;
-        }
-        _spriteSequencer?.StopFiring();
+        StopFiring();
         StopAllCoroutines();
         gameObject.SetActive(false);
     }
