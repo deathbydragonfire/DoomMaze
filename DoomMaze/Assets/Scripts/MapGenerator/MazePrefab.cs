@@ -24,6 +24,14 @@ public struct MazeSocket
 /// </summary>
 public class MazePrefab : MonoBehaviour
 {
+    [Tooltip("Minimum pivot-to-pivot distance at which this room is considered " +
+             "to overlap another. Set this to just under the narrowest dimension " +
+             "of this room's footprint. The larger value between two compared rooms is used.")]
+    [SerializeField] private float overlapThreshold = 0f;
+
+    /// <summary>Per-prefab pivot distance below which this room is considered overlapping.</summary>
+    public float OverlapThreshold => overlapThreshold;
+
     [Tooltip("Socket index 0 = entry. Remaining indices = exits.")]
     [SerializeField] private List<MazeSocket> sockets = new();
 
