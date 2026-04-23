@@ -5,6 +5,8 @@ using UnityEngine;
 /// </summary>
 public class ArmorPickup : PickupBase
 {
+    private static readonly Color ArmorFeedColor = new Color(0.35f, 0.82f, 1f, 1f);
+
     [SerializeField] private ArmorPickupData _data;
 
     protected override bool ExecutePickup(PlayerInventory inventory)
@@ -26,7 +28,23 @@ public class ArmorPickup : PickupBase
         if (armor.CurrentArmor >= armor.MaxArmor)
             return false;
 
+        int previousArmor = armor.CurrentArmor;
         armor.AddArmor(_data.ArmorAmount);
+
+        int addedArmor = armor.CurrentArmor - previousArmor;
+        if (addedArmor <= 0)
+            return false;
+
+        string displayName = _data != null && !string.IsNullOrWhiteSpace(_data.DisplayName)
+            ? _data.DisplayName.ToUpperInvariant()
+            : "ARMOR";
+
+        EventBus<PickupFeedMessageEvent>.Raise(new PickupFeedMessageEvent
+        {
+            Message = $"+{addedArmor} {displayName}",
+            Tint    = ArmorFeedColor
+        });
+
         return true;
     }
 }

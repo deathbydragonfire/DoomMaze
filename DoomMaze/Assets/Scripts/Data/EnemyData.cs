@@ -1,24 +1,31 @@
 using UnityEngine;
 
+public enum EnemyAggroDetectionMode
+{
+    Radius,
+    LineOfSight
+}
+
 /// <summary>
 /// ScriptableObject holding all stats and references for a single enemy type.
-/// Pure data — no logic. Asset naming convention: EnemyData_[Name].
+/// Pure data - no logic. Asset naming convention: EnemyData_[Name].
 /// </summary>
 [CreateAssetMenu(menuName = "DoomMaze/Enemy Data", fileName = "EnemyData_New")]
 public class EnemyData : ScriptableObject
 {
     [Header("Identity")]
-    public string     EnemyId;
-    public string     DisplayName;
+    public string EnemyId;
+    public string DisplayName;
     public GameObject EnemyPrefab;
 
     [Header("Stats")]
-    public int        MaxHealth;
-    public float      MoveSpeed;
-    public float      AggroRange;         // Distance at which enemy transitions Idle → Alert/Chase
-    public float      AttackRange;        // Distance at which enemy can attack
-    public float      AttackDamage;
-    public float      AttackRate;         // Attacks per second
+    public int MaxHealth;
+    public float MoveSpeed;
+    public EnemyAggroDetectionMode AggroDetectionMode = EnemyAggroDetectionMode.Radius;
+    public float AggroRange;          // Max distance used for aggro checks in either mode
+    public float AttackRange;         // Distance at which enemy can attack
+    public float AttackDamage;
+    public float AttackRate;          // Attacks per second
     public DamageType AttackDamageType;
 
     [Header("Navigation")]
@@ -27,7 +34,7 @@ public class EnemyData : ScriptableObject
     public float AgentHeight;
 
     [Header("Drop Table")]
-    public GameObject[] PossibleDrops;   // Prefab references; Phase 6 pickup prefabs slot in here
+    public GameObject[] PossibleDrops;    // Prefab references; Phase 6 pickup prefabs slot in here
     [Range(0f, 1f)]
     public float DropChance;
 
@@ -54,15 +61,15 @@ public class EnemyData : ScriptableObject
     public Sprite[] AttackSprites;
     public Sprite[] HurtSprites;
     public Sprite[] DeathSprites;
-    public float    FrameRate;            // Sprite animation FPS
+    public float FrameRate;           // Sprite animation FPS
 
     [Header("Grapple")]
     public bool IsHookImmune;
 
-    public AudioClip GetAggroClip()    => GetRandomClip(AggroSound, AggroSoundVariants);
-    public AudioClip GetAttackClip()   => GetRandomClip(AttackSound, AttackSoundVariants);
-    public AudioClip GetHurtClip()     => GetRandomClip(HurtSound, HurtSoundVariants);
-    public AudioClip GetDeathClip()    => GetRandomClip(DeathSound, DeathSoundVariants);
+    public AudioClip GetAggroClip() => GetRandomClip(AggroSound, AggroSoundVariants);
+    public AudioClip GetAttackClip() => GetRandomClip(AttackSound, AttackSoundVariants);
+    public AudioClip GetHurtClip() => GetRandomClip(HurtSound, HurtSoundVariants);
+    public AudioClip GetDeathClip() => GetRandomClip(DeathSound, DeathSoundVariants);
     public AudioClip GetFootstepClip() => GetRandomClip(FootstepSound, FootstepSoundVariants);
 
     private static AudioClip GetRandomClip(AudioClip primaryClip, AudioClip[] variantClips)

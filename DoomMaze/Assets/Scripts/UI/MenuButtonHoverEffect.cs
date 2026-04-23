@@ -23,6 +23,8 @@ public sealed class MenuButtonHoverEffect : MonoBehaviour, IPointerEnterHandler,
     private bool _isHovered;
     private bool _isSelected;
     private bool _hasCapturedDefaults;
+    private bool _hasPlayedHoverSound;
+    private IMenuHoverAudioProvider _hoverAudioProvider;
 
     public static void AttachToButtons(Transform root)
     {
@@ -78,27 +80,32 @@ public sealed class MenuButtonHoverEffect : MonoBehaviour, IPointerEnterHandler,
     public void OnPointerEnter(PointerEventData eventData)
     {
         _isHovered = true;
+        TryPlayHoverSound();
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
         _isHovered = false;
+        ResetHoverSoundStateIfNeeded();
     }
 
     public void OnSelect(BaseEventData eventData)
     {
         _isSelected = true;
+        TryPlayHoverSound();
     }
 
     public void OnDeselect(BaseEventData eventData)
     {
         _isSelected = false;
+        ResetHoverSoundStateIfNeeded();
     }
 
     private void CacheReferences()
     {
         _button = GetComponent<Button>();
         _rectTransform = transform as RectTransform;
+        _hoverAudioProvider = FindHoverAudioProvider();
 
         TMP_Text label = GetComponentInChildren<TMP_Text>(true);
         _targetGraphic = label != null ? label : _button != null ? _button.targetGraphic : GetComponent<Graphic>();
@@ -131,7 +138,37 @@ public sealed class MenuButtonHoverEffect : MonoBehaviour, IPointerEnterHandler,
 
         _isHovered = false;
         _isSelected = false;
+        _hasPlayedHoverSound = false;
         _rectTransform.localScale = _baseScale;
         _targetGraphic.color = _baseColor;
+    }
+
+    private void TryPlayHoverSound()
+    {
+        if (_hasPlayedHoverSound || _button == null || !_button.interactable || (!_isHovered && !_isSelected))
+            return;
+
+        _hoverAudioProvider?.PlayMenuHoverSound();
+        _hasPlayedHoverSound = true;
+    }
+
+    private void ResetHoverSoundStateIfNeeded()
+    {
+        if (_isHovered || _isSelected)
+            return;
+
+        _hasPlayedHoverSound = false;
+    }
+
+    private IMenuHoverAudioProvider FindHoverAudioProvider()
+    {
+        MonoBehaviour[] parents = GetComponentsInParent<MonoBehaviour>(true);
+        for (int i = 0; i < parents.Length; i++)
+        {
+            if (parents[i] is IMenuHoverAudioProvider provider)
+                return provider;
+        }
+
+        return null;
     }
 }

@@ -5,7 +5,7 @@ using UnityEngine.UI;
 /// Reads from <see cref="SaveManager.CurrentSettings"/> on open, previews changes live,
 /// and writes back on Apply. Closing without applying reverts live changes.
 /// </summary>
-public class SettingsMenuController : MonoBehaviour
+public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
 {
     [SerializeField] private Slider _masterVolumeSlider;
     [SerializeField] private Slider _musicVolumeSlider;
@@ -14,6 +14,11 @@ public class SettingsMenuController : MonoBehaviour
     [SerializeField] private Slider _fovSlider;
     [SerializeField] private Toggle _invertYToggle;
     [SerializeField] private Toggle _fullscreenToggle;
+    [Header("UI Audio")]
+    [SerializeField] private AudioClip[] _hoverSounds;
+    [Range(0f, 1f)] [SerializeField] private float _hoverSoundVolume = 1f;
+    [SerializeField] private AudioClip[] _clickSounds;
+    [Range(0f, 1f)] [SerializeField] private float _clickSoundVolume = 1f;
 
     private void Awake()
     {
@@ -40,19 +45,21 @@ public class SettingsMenuController : MonoBehaviour
     public void Open()
     {
         PopulateControls();
+        PlayClickSound();
         gameObject.SetActive(true);
     }
 
     /// <summary>Reverts unapplied changes and hides the panel.</summary>
     public void Close()
     {
-        RevertLiveAudio();
-        gameObject.SetActive(false);
+        PlayClickSound();
+        CloseInternal(revertLiveAudio: true);
     }
 
     /// <summary>Writes all control values to settings, applies display settings, and saves.</summary>
     public void OnApply()
     {
+        PlayClickSound();
         if (SaveManager.Instance == null) return;
 
         SettingsData settings = SaveManager.Instance.CurrentSettings;
@@ -68,7 +75,12 @@ public class SettingsMenuController : MonoBehaviour
         Screen.SetResolution(settings.ResolutionWidth, settings.ResolutionHeight, settings.Fullscreen);
 
         SaveManager.Instance.SaveSettings();
-        Close();
+        CloseInternal(revertLiveAudio: false);
+    }
+
+    public void PlayMenuHoverSound()
+    {
+        AudioManager.Instance?.PlayUi(_hoverSounds, _hoverSoundVolume);
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
@@ -105,6 +117,19 @@ public class SettingsMenuController : MonoBehaviour
     private void OnMasterVolumeChanged(float value) => AudioManager.Instance?.SetMasterVolume(value);
     private void OnMusicVolumeChanged(float value)  => AudioManager.Instance?.SetMusicVolume(value);
     private void OnSfxVolumeChanged(float value)    => AudioManager.Instance?.SetSfxVolume(value);
+
+    private void PlayClickSound()
+    {
+        AudioManager.Instance?.PlayUi(_clickSounds, _clickSoundVolume);
+    }
+
+    private void CloseInternal(bool revertLiveAudio)
+    {
+        if (revertLiveAudio)
+            RevertLiveAudio();
+
+        gameObject.SetActive(false);
+    }
 
     private void RevertLiveAudio()
     {

@@ -13,9 +13,6 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
     [SerializeField] public KillStreakDisplay     StreakDisplay;
     [SerializeField] public KillFeedDisplay       KillFeedDisplay;
 
-    [Header("Streak Settings")]
-    [SerializeField] private float _streakWindowSeconds = 4f;
-
     [Header("Shake - per tier (index 0 = single kill)")]
     [SerializeField] private float[] _streakShakeMagnitudes = { 0.08f, 0.14f, 0.20f, 0.28f };
     [SerializeField] private float[] _streakShakeDurations  = { 0.10f, 0.15f, 0.18f, 0.22f };
@@ -43,7 +40,6 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
     [SerializeField] private float _meleeHitShakeBoost   = 0.015f;
 
     private int       _streakCount;
-    private float     _streakTimer;
     private float     _baseFixedDeltaTime;
     private Coroutine _meleeHitStopRoutine;
 
@@ -59,6 +55,7 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         EventBus<WeaponFiredEvent>.Subscribe(OnWeaponFired);
         EventBus<PlayerLandedEvent>.Subscribe(OnPlayerLanded);
         EventBus<PlayerDashedEvent>.Subscribe(OnPlayerDashed);
+        EventBus<PlayerDamagedEvent>.Subscribe(OnPlayerDamaged);
         EventBus<MeleeHitEvent>.Subscribe(OnMeleeHit);
         EventBus<PauseChangedEvent>.Subscribe(OnPauseChanged);
     }
@@ -70,6 +67,7 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         EventBus<WeaponFiredEvent>.Unsubscribe(OnWeaponFired);
         EventBus<PlayerLandedEvent>.Unsubscribe(OnPlayerLanded);
         EventBus<PlayerDashedEvent>.Unsubscribe(OnPlayerDashed);
+        EventBus<PlayerDamagedEvent>.Unsubscribe(OnPlayerDamaged);
         EventBus<MeleeHitEvent>.Unsubscribe(OnMeleeHit);
         EventBus<PauseChangedEvent>.Unsubscribe(OnPauseChanged);
 
@@ -82,30 +80,23 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         RestoreTimeScale();
     }
 
-    private void Update()
-    {
-        if (_streakCount <= 0) return;
-
-        _streakTimer -= Time.deltaTime;
-        if (_streakTimer <= 0f)
-            ResetStreak();
-    }
-
     private void OnEnemyDied(EnemyDiedEvent e)
     {
         _streakCount = Mathf.Max(0, _streakCount) + 1;
-        _streakTimer = _streakWindowSeconds;
 
         Vector3 position = e.Enemy != null ? e.Enemy.transform.position : Vector3.zero;
         bool    isStreak = _streakCount >= 2;
+        string  enemyName = ResolveEnemyName(e);
 
         EventBus<KillConfirmedEvent>.Raise(new KillConfirmedEvent
         {
             WorldPosition = position,
-            IsStreakKill  = isStreak
+            IsStreakKill  = isStreak,
+            StreakCount   = _streakCount,
+            EnemyName     = enemyName
         });
 
-        if (isStreak)
+        if (_streakCount >= 2)
         {
             EventBus<KillStreakEvent>.Raise(new KillStreakEvent { StreakCount = _streakCount });
             StreakDisplay?.ShowStreak(_streakCount);
@@ -170,6 +161,12 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         VolumeController?.PulseDash(Mathf.Lerp(0.8f, 1.2f, dashIntensity));
     }
 
+    private void OnPlayerDamaged(PlayerDamagedEvent e)
+    {
+        if (_streakCount > 0)
+            ResetStreak();
+    }
+
     private void OnMeleeHit(MeleeHitEvent e)
     {
         EventBus<CameraShakeEvent>.Raise(new CameraShakeEvent
@@ -232,7 +229,24 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
     private void ResetStreak()
     {
         _streakCount = 0;
-        _streakTimer = 0f;
         EventBus<KillStreakEvent>.Raise(new KillStreakEvent { StreakCount = 0 });
+    }
+
+    private static string ResolveEnemyName(EnemyDiedEvent e)
+    {
+        if (e.Enemy != null)
+        {
+            EnemyBase enemyBase = e.Enemy.GetComponent<EnemyBase>();
+            if (enemyBase != null && enemyBase.Data != null && !string.IsNullOrWhiteSpace(enemyBase.Data.DisplayName))
+                return enemyBase.Data.DisplayName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(e.EnemyId))
+            return e.EnemyId;
+
+        if (e.Enemy != null)
+            return e.Enemy.name;
+
+        return "Enemy";
     }
 }

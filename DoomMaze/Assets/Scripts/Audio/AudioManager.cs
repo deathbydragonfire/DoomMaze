@@ -71,8 +71,24 @@ public class AudioManager : MonoBehaviour
     /// <summary>Plays a clip on the UI source.</summary>
     public void PlayUi(AudioClip clip)
     {
+        PlayUi(clip, 1f);
+    }
+
+    public void PlayUi(AudioClip clip, float volumeScale)
+    {
         if (clip == null) return;
-        _uiSource.PlayOneShot(clip);
+        _uiSource.PlayOneShot(clip, Mathf.Clamp01(volumeScale));
+    }
+
+    public void PlayUi(AudioClip[] clips)
+    {
+        PlayUi(clips, 1f);
+    }
+
+    public void PlayUi(AudioClip[] clips, float volumeScale)
+    {
+        if (clips == null || clips.Length == 0) return;
+        PlayUi(clips[Random.Range(0, clips.Length)], volumeScale);
     }
 
     /// <summary>Sets Master mixer volume. Value is 0–1, converted to dB internally.</summary>
