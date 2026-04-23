@@ -126,14 +126,14 @@ public class Rocket : MonoBehaviour
             if (TryGetImpact(currentPosition, step, out RaycastHit hit))
             {
                 transform.position = hit.point - _direction * Mathf.Min(0.05f, GetCollisionRadius() * 0.5f);
-                Detonate(hit.point, hit.normal);
+                Detonate(hit.point, hit.normal, GetHealthComponent(hit.collider));
                 yield break;
             }
 
-            if (TryGetOverlapImpact(nextPosition, out Vector3 overlapPoint, out Vector3 overlapNormal))
+            if (TryGetOverlapImpact(nextPosition, out Vector3 overlapPoint, out Vector3 overlapNormal, out HealthComponent overlapHealth))
             {
                 transform.position = overlapPoint;
-                Detonate(overlapPoint, overlapNormal);
+                Detonate(overlapPoint, overlapNormal, overlapHealth);
                 yield break;
             }
 
@@ -180,10 +180,15 @@ public class Rocket : MonoBehaviour
         return foundHit;
     }
 
-    private bool TryGetOverlapImpact(Vector3 position, out Vector3 impactPoint, out Vector3 impactNormal)
+    private bool TryGetOverlapImpact(
+        Vector3 position,
+        out Vector3 impactPoint,
+        out Vector3 impactNormal,
+        out HealthComponent impactHealth)
     {
         impactPoint = position;
         impactNormal = -_direction;
+        impactHealth = null;
 
         int overlapCount = Physics.OverlapSphereNonAlloc(
             position,
@@ -210,13 +215,14 @@ public class Rocket : MonoBehaviour
 
             impactPoint = point;
             impactNormal = normal;
+            impactHealth = GetHealthComponent(overlap);
             return true;
         }
 
         return false;
     }
 
-    private void Detonate(Vector3 explosionPosition, Vector3 explosionNormal)
+    private void Detonate(Vector3 explosionPosition, Vector3 explosionNormal, HealthComponent directHitHealth = null)
     {
         if (_detonated)
             return;
@@ -229,7 +235,7 @@ public class Rocket : MonoBehaviour
         SetFlightColliderEnabled(false);
         StopFlightAudio();
         SpawnExplosionFx(explosionPosition, explosionNormal);
-        ApplyExplosion(explosionPosition);
+        ApplyExplosion(explosionPosition, directHitHealth);
 
         float explosionSoundDuration = PlayExplosionAudio();
         if (explosionSoundDuration > 0f)
@@ -241,7 +247,7 @@ public class Rocket : MonoBehaviour
         ReturnToPool();
     }
 
-    private void ApplyExplosion(Vector3 explosionPosition)
+    private void ApplyExplosion(Vector3 explosionPosition, HealthComponent directHitHealth)
     {
         int overlapCount = Physics.OverlapSphereNonAlloc(
             explosionPosition,
@@ -280,7 +286,9 @@ public class Rocket : MonoBehaviour
             if (health == null || !health.IsAlive || health.IsPlayer)
                 continue;
 
-            float damageMultiplier = GetExplosionDamageMultiplier(explosionPosition, GetTargetPoint(health.transform));
+            float damageMultiplier = health == directHitHealth
+                ? 1f
+                : GetExplosionDamageMultiplier(explosionPosition, GetTargetPoint(health.transform));
             if (damageMultiplier <= 0f)
                 continue;
 
@@ -359,6 +367,11 @@ public class Rocket : MonoBehaviour
     private static Vector3 GetTargetPoint(Transform target)
     {
         return target.position + Vector3.up * 0.9f;
+    }
+
+    private static HealthComponent GetHealthComponent(Collider collider)
+    {
+        return collider != null ? collider.GetComponentInParent<HealthComponent>() : null;
     }
 
     private bool IsOwnerCollider(Collider collider)

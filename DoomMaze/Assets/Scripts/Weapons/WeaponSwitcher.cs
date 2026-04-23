@@ -132,6 +132,7 @@ public class WeaponSwitcher : MonoBehaviour
         if (slotIndex < 0 || slotIndex >= _weaponSlots.Length) return;
         if (slotIndex == ActiveSlot) return;
         if (_weaponSlots[slotIndex] == null) return;
+        if (ActiveSlot >= 0 && ActiveSlot < _weaponSlots.Length && _weaponSlots[ActiveSlot] != null && !_weaponSlots[ActiveSlot].CanBeSwitchedAway) return;
 
         int fromSlot = ActiveSlot;
 

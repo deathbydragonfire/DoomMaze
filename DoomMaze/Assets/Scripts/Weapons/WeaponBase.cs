@@ -19,6 +19,9 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
     public int CurrentAmmo { get; protected set; }
 
     /// <inheritdoc/>
+    public virtual bool CanBeSwitchedAway => _spriteSequencer == null || _spriteSequencer.CanSwitchWeapons;
+
+    /// <inheritdoc/>
     public virtual bool CanFire()
     {
         return Time.time >= _nextFireTime && CurrentAmmo > 0 && !_isReloading;
