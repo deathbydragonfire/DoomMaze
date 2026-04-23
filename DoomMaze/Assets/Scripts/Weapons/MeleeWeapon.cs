@@ -58,13 +58,7 @@ public class MeleeWeapon : WeaponBase
 
         for (int i = 0; i < hitCount; i++)
         {
-            IDamageable damageable = _overlapBuffer[i].GetComponentInParent<IDamageable>();
-            damageable?.TakeDamage(new DamageInfo
-            {
-                Amount = _data.Damage,
-                Type   = DamageType.Physical,
-                Source = gameObject
-            });
+            ApplyDirectDamage(_overlapBuffer[i]);
         }
 
         if (hitCount > 0)
@@ -79,5 +73,30 @@ public class MeleeWeapon : WeaponBase
                 Magnitude = _data.ShakeMagnitude,
                 Duration  = _data.ShakeDuration
             });
+    }
+
+    private void ApplyDirectDamage(Collider hitCollider)
+    {
+        if (hitCollider == null)
+            return;
+
+        HealthComponent health = hitCollider.GetComponentInParent<HealthComponent>();
+        if (health != null && health.IsAlive)
+        {
+            health.TakeDamage(new DamageInfo
+            {
+                Amount = _data.Damage,
+                Type = DamageType.Physical,
+                Source = gameObject
+            });
+            return;
+        }
+
+        hitCollider.GetComponentInParent<IDamageable>()?.TakeDamage(new DamageInfo
+        {
+            Amount = _data.Damage,
+            Type = DamageType.Physical,
+            Source = gameObject
+        });
     }
 }

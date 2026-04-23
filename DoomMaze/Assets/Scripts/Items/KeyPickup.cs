@@ -6,6 +6,8 @@ using UnityEngine;
 /// </summary>
 public class KeyPickup : PickupBase
 {
+    private static readonly Color KeyFeedColor = new Color(1f, 0.9f, 0.24f, 1f);
+
     [SerializeField] private string _keyId;
 
     protected override bool ExecutePickup(PlayerInventory inventory)
@@ -20,6 +22,21 @@ public class KeyPickup : PickupBase
             return false;
 
         inventory.AddItem(_keyId);
+        EventBus<PickupFeedMessageEvent>.Raise(new PickupFeedMessageEvent
+        {
+            Message = $"PICKED UP {FormatKeyLabel(_keyId)}",
+            Tint    = KeyFeedColor
+        });
+
         return true;
+    }
+
+    private static string FormatKeyLabel(string keyId)
+    {
+        if (string.IsNullOrWhiteSpace(keyId))
+            return "KEY";
+
+        string label = keyId.Replace('_', ' ').Trim();
+        return label.ToUpperInvariant();
     }
 }

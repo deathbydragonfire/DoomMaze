@@ -244,6 +244,15 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""UseSuper"",
+                    ""type"": ""Button"",
+                    ""id"": ""83e95438-5273-45d6-8b39-4c0a671d11d4"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -477,6 +486,17 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
                     ""action"": ""Inventory"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""98499f8c-4d98-4184-9857-dc8f593a2688"",
+                    ""path"": ""<Keyboard>/q"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""UseSuper"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         },
@@ -674,6 +694,7 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
         m_Player_Weapon6 = m_Player.FindAction("Weapon 6", throwIfNotFound: true);
         m_Player_Pause = m_Player.FindAction("Pause", throwIfNotFound: true);
         m_Player_Inventory = m_Player.FindAction("Inventory", throwIfNotFound: true);
+        m_Player_UseSuper = m_Player.FindAction("UseSuper", throwIfNotFound: true);
         // UI
         m_UI = asset.FindActionMap("UI", throwIfNotFound: true);
         m_UI_Navigate = m_UI.FindAction("Navigate", throwIfNotFound: true);
@@ -780,6 +801,7 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
     private readonly InputAction m_Player_Weapon6;
     private readonly InputAction m_Player_Pause;
     private readonly InputAction m_Player_Inventory;
+    private readonly InputAction m_Player_UseSuper;
     /// <summary>
     /// Provides access to input actions defined in input action map "Player".
     /// </summary>
@@ -860,6 +882,10 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
         /// </summary>
         public InputAction @Inventory => m_Wrapper.m_Player_Inventory;
         /// <summary>
+        /// Provides access to the underlying input action "Player/UseSuper".
+        /// </summary>
+        public InputAction @UseSuper => m_Wrapper.m_Player_UseSuper;
+        /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
         public InputActionMap Get() { return m_Wrapper.m_Player; }
@@ -936,6 +962,9 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
             @Inventory.started += instance.OnInventory;
             @Inventory.performed += instance.OnInventory;
             @Inventory.canceled += instance.OnInventory;
+            @UseSuper.started += instance.OnUseSuper;
+            @UseSuper.performed += instance.OnUseSuper;
+            @UseSuper.canceled += instance.OnUseSuper;
         }
 
         /// <summary>
@@ -998,6 +1027,9 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
             @Inventory.started -= instance.OnInventory;
             @Inventory.performed -= instance.OnInventory;
             @Inventory.canceled -= instance.OnInventory;
+            @UseSuper.started -= instance.OnUseSuper;
+            @UseSuper.performed -= instance.OnUseSuper;
+            @UseSuper.canceled -= instance.OnUseSuper;
         }
 
         /// <summary>
@@ -1308,6 +1340,13 @@ public partial class @DoomMazeInputActions: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnInventory(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "UseSuper" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnUseSuper(InputAction.CallbackContext context);
     }
     /// <summary>
     /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "UI" which allows adding and removing callbacks.

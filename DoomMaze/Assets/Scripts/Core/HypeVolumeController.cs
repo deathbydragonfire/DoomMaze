@@ -19,6 +19,9 @@ public class HypeVolumeController : MonoBehaviour
     [SerializeField] private float _vigFallTime   = 0.08f;
     [SerializeField] private float _dashRiseTime  = 0.02f;
     [SerializeField] private float _dashFallTime  = 0.16f;
+    [SerializeField] private float _glitchRiseTime = 0.03f;
+    [SerializeField] private float _glitchHoldTime = 0.07f;
+    [SerializeField] private float _glitchFallTime = 0.18f;
 
     private Volume              _volume;
     private VolumeProfile       _profile;
@@ -32,6 +35,7 @@ public class HypeVolumeController : MonoBehaviour
     private Coroutine _contrastRoutine;
     private Coroutine _vignetteRoutine;
     private Coroutine _dashRoutine;
+    private Coroutine _glitchRoutine;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -92,6 +96,14 @@ public class HypeVolumeController : MonoBehaviour
         if (_dashRoutine != null)
             StopCoroutine(_dashRoutine);
         _dashRoutine = StartCoroutine(PulseDashRoutine(intensity));
+    }
+
+    /// <summary>Strong chromatic/lens glitch burst for transitions and scripted moments.</summary>
+    public void PulseGlitch(float intensity = 1f, float durationMultiplier = 1f)
+    {
+        if (_glitchRoutine != null)
+            StopCoroutine(_glitchRoutine);
+        _glitchRoutine = StartCoroutine(PulseGlitchRoutine(intensity, durationMultiplier));
     }
 
     // ── Coroutines ────────────────────────────────────────────────────────────
@@ -190,6 +202,62 @@ public class HypeVolumeController : MonoBehaviour
         _dashRoutine = null;
     }
 
+    private IEnumerator PulseGlitchRoutine(float intensity, float durationMultiplier)
+    {
+        _chromaticAberration.active                  = true;
+        _chromaticAberration.intensity.overrideState = true;
+        _lensDistortion.active                       = true;
+        _lensDistortion.intensity.overrideState      = true;
+        _colorAdjustments.active                     = true;
+        _colorAdjustments.contrast.overrideState     = true;
+        _colorAdjustments.saturation.overrideState   = true;
+        _vignette.active                             = true;
+        _vignette.intensity.overrideState            = true;
+
+        float clampedIntensity = Mathf.Max(0f, intensity);
+        float caTarget         = Mathf.Clamp01(0.85f * clampedIntensity);
+        float ldTarget         = Mathf.Clamp(-0.55f * clampedIntensity, -1f, 0f);
+        float contrastTarget   = Mathf.Clamp(35f * clampedIntensity, -100f, 100f);
+        float saturationTarget = Mathf.Clamp(-55f * clampedIntensity, -100f, 100f);
+        float vignetteTarget   = Mathf.Clamp01(0.28f * clampedIntensity);
+
+        float riseDuration = Mathf.Max(0.001f, _glitchRiseTime * Mathf.Max(0.01f, durationMultiplier));
+        float holdDuration = Mathf.Max(0f, _glitchHoldTime * Mathf.Max(0.01f, durationMultiplier));
+        float fallDuration = Mathf.Max(0.001f, _glitchFallTime * Mathf.Max(0.01f, durationMultiplier));
+
+        yield return LerpFloats(
+            v =>
+            {
+                _chromaticAberration.intensity.value = v * caTarget;
+                _lensDistortion.intensity.value      = v * ldTarget;
+                _colorAdjustments.contrast.value     = v * contrastTarget;
+                _colorAdjustments.saturation.value   = v * saturationTarget;
+                _vignette.intensity.value            = v * vignetteTarget;
+            },
+            0f, 1f, riseDuration);
+
+        if (holdDuration > 0f)
+            yield return new WaitForSecondsRealtime(holdDuration);
+
+        yield return LerpFloats(
+            v =>
+            {
+                _chromaticAberration.intensity.value = v * caTarget;
+                _lensDistortion.intensity.value      = v * ldTarget;
+                _colorAdjustments.contrast.value     = v * contrastTarget;
+                _colorAdjustments.saturation.value   = v * saturationTarget;
+                _vignette.intensity.value            = v * vignetteTarget;
+            },
+            1f, 0f, fallDuration);
+
+        _chromaticAberration.intensity.value = 0f;
+        _lensDistortion.intensity.value      = 0f;
+        _colorAdjustments.contrast.value     = 0f;
+        _colorAdjustments.saturation.value   = 0f;
+        _vignette.intensity.value            = 0f;
+        _glitchRoutine = null;
+    }
+
     // ── Private ───────────────────────────────────────────────────────────────
 
     private static IEnumerator LerpFloats(System.Action<float> setter, float from, float to, float duration)
@@ -209,6 +277,7 @@ public class HypeVolumeController : MonoBehaviour
         if (_chromaticAberration != null) _chromaticAberration.intensity.value = 0f;
         if (_lensDistortion      != null) _lensDistortion.intensity.value      = 0f;
         if (_colorAdjustments    != null) _colorAdjustments.contrast.value     = 0f;
+        if (_colorAdjustments    != null) _colorAdjustments.saturation.value   = 0f;
         if (_vignette            != null) _vignette.intensity.value            = 0f;
     }
 }

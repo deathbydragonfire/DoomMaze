@@ -38,6 +38,18 @@ public class WeaponSwitcher : MonoBehaviour
         UnbindInput();
     }
 
+    private void Update()
+    {
+        if (!_inputBound || Mouse.current == null || InputManager.Instance == null || !InputManager.Instance.Controls.Player.enabled)
+            return;
+
+        float scrollY = Mouse.current.scroll.ReadValue().y;
+        if (Mathf.Approximately(scrollY, 0f))
+            return;
+
+        CycleWeapon(scrollY > 0f ? -1 : 1);
+    }
+
     private void OnGameStateChanged(GameStateChangedEvent e)
     {
         if (e.NewState == GameState.Playing)
@@ -58,14 +70,6 @@ public class WeaponSwitcher : MonoBehaviour
     private void TryBindInput()
     {
         if (_inputBound || InputManager.Instance == null) return;
-
-        var player = InputManager.Instance.Controls.Player;
-
-        player.Weapon1.performed += _ => SwitchToSlot(0);
-        player.Weapon2.performed += _ => SwitchToSlot(1);
-        player.Weapon3.performed += _ => SwitchToSlot(2);
-        player.Weapon4.performed += _ => SwitchToSlot(3);
-        player.Weapon5.performed += _ => SwitchToSlot(4);
 
         _inputBound = true;
     }
@@ -146,5 +150,23 @@ public class WeaponSwitcher : MonoBehaviour
             ToSlot    = ActiveSlot,
             NewWeapon = _weaponSlots[ActiveSlot].Data
         });
+    }
+
+    private void CycleWeapon(int direction)
+    {
+        if (direction == 0 || _weaponSlots.Length == 0)
+            return;
+
+        int currentSlot = ActiveSlot >= 0 ? ActiveSlot : 0;
+
+        for (int step = 1; step <= _weaponSlots.Length; step++)
+        {
+            int nextSlot = (currentSlot + direction * step + _weaponSlots.Length) % _weaponSlots.Length;
+            if (_weaponSlots[nextSlot] == null)
+                continue;
+
+            SwitchToSlot(nextSlot);
+            return;
+        }
     }
 }

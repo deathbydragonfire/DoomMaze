@@ -17,6 +17,7 @@ public class HealthComponent : MonoBehaviour, IDamageable
     public int  CurrentHealth  { get; private set; }
     public int  MaxHealth      => _maxHealth;
     public bool IsAlive        { get; private set; }
+    public bool IsPlayer       => _isPlayer;
     public bool IsInvulnerable { get; private set; }
 
     /// <summary>Raised when this entity dies. Subscribers own any post-death logic (e.g. deactivation).</summary>

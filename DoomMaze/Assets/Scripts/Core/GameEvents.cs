@@ -39,6 +39,18 @@ public struct WeaponEquippedEvent  { public int SlotIndex; }
 public struct WeaponFiredEvent    { public WeaponData Data; }
 public struct AmmoChangedEvent    { public string AmmoTypeId; public int CurrentAmmo; public int CarriedAmmo; }
 public struct WeaponSwitchedEvent { public int FromSlot; public int ToSlot; public WeaponData NewWeapon; }
+public struct SuperMeterChangedEvent
+{
+    public float ChargeNormalized;
+    public int CurrentCharges;
+    public int ChargesRequired;
+    public bool IsReady;
+}
+public struct SuperFiredEvent
+{
+    public UnityEngine.Vector3 Origin;
+    public UnityEngine.Vector3 EndPoint;
+}
 
 // ── Phase 4: Enemy events ─────────────────────────────────────────────────────
 public struct EnemyDamagedEvent { public UnityEngine.GameObject Enemy; public DamageInfo Info; public int CurrentHealth; }
@@ -78,7 +90,13 @@ public struct GrappleReleasedEvent     { }
 
 // ── Hype / Feedback events ────────────────────────────────────────────────────
 public struct KillStreakEvent          { public int StreakCount; }
-public struct KillConfirmedEvent       { public UnityEngine.Vector3 WorldPosition; public bool IsStreakKill; }
+public struct KillConfirmedEvent
+{
+    public UnityEngine.Vector3 WorldPosition;
+    public bool                IsStreakKill;
+    public int                 StreakCount;
+    public string              EnemyName;
+}
 public struct PlayerLandedEvent        { public float FallSpeed; }
 public struct PlayerDashedEvent        { public UnityEngine.Vector3 Direction; public float Duration; public float Speed; }
 public struct PlayerSprintChangedEvent { public bool IsSprinting; }

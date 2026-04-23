@@ -4,10 +4,15 @@ using UnityEngine;
 /// Listens to <see cref="GameStateChangedEvent"/> and activates the Death or Victory panel
 /// accordingly. Unlocks the cursor when either panel is shown.
 /// </summary>
-public class GameOverController : MonoBehaviour
+public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
 {
     [SerializeField] private GameObject _deathPanel;
     [SerializeField] private GameObject _victoryPanel;
+    [Header("UI Audio")]
+    [SerializeField] private AudioClip[] _hoverSounds;
+    [Range(0f, 1f)] [SerializeField] private float _hoverSoundVolume = 1f;
+    [SerializeField] private AudioClip[] _clickSounds;
+    [Range(0f, 1f)] [SerializeField] private float _clickSoundVolume = 1f;
 
     private void Awake()
     {
@@ -51,12 +56,24 @@ public class GameOverController : MonoBehaviour
     /// <summary>Reloads the current scene to restart the game.</summary>
     public void OnRestart()
     {
+        PlayClickSound();
         SceneFlowManager.Instance?.ReloadCurrentScene();
     }
 
     /// <summary>Loads the Main Menu scene.</summary>
     public void OnMainMenu()
     {
+        PlayClickSound();
         SceneFlowManager.Instance?.LoadScene("MainMenu");
+    }
+
+    public void PlayMenuHoverSound()
+    {
+        AudioManager.Instance?.PlayUi(_hoverSounds, _hoverSoundVolume);
+    }
+
+    private void PlayClickSound()
+    {
+        AudioManager.Instance?.PlayUi(_clickSounds, _clickSoundVolume);
     }
 }

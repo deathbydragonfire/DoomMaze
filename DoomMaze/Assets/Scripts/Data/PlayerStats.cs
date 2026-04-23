@@ -26,6 +26,21 @@ public class PlayerStats : ScriptableObject
     [Min(0f)] public float DashSpeed                         = 28f;
     [Min(0f)] public float DashDuration                      = 0.18f;
     [Min(0f)] public float DashCooldown                      = 0.5f;
+    [Header("Wall Run")]
+    [Min(0f)] public float WallRunSpeed                      = 14f;
+    [Min(0f)] public float WallRunDuration                   = 0.65f;
+    [Min(0f)] public float WallSlideDelay                    = 0.18f;
+    [Min(0f)] public float WallSlideSpeed                    = 6f;
+    [Range(0f, 1f)] public float WallRunGravityFactor        = 0.3f;
+    [Min(0f)] public float WallStickForce                    = 6f;
+    [Min(0f)] public float WallCheckDistance                 = 0.8f;
+    [Range(0f, 1f)] public float WallRunMinForwardInput      = 0.1f;
+    [Min(0f)] public float WallRunMinHorizontalSpeed         = 6f;
+    [Min(0f)] public float WallJumpAwaySpeed                 = 11f;
+    [Min(0f)] public float WallJumpForwardSpeed              = 7f;
+    [Min(0f)] public float WallJumpHeightMultiplier          = 1.05f;
+    [Min(0f)] public float WallJumpMomentumDecay             = 12f;
+    [Min(0f)] public float WallReattachCooldown              = 0.2f;
     public float GroundCheckDistance   = 0.12f;
 
     [Header("Look")]

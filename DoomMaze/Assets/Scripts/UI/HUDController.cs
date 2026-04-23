@@ -44,6 +44,7 @@ public class HUDController : MonoBehaviour
         EventBus<PickupCollectedEvent>.Subscribe(OnPickupCollected);
         EventBus<PlayerLowHealthEvent>.Subscribe(OnLowHealth);
         EventBus<GameStateChangedEvent>.Subscribe(OnGameStateChanged);
+        EventBus<SuperMeterChangedEvent>.Subscribe(OnSuperMeterChanged);
     }
 
     private void OnDisable()
@@ -57,6 +58,12 @@ public class HUDController : MonoBehaviour
         EventBus<PickupCollectedEvent>.Unsubscribe(OnPickupCollected);
         EventBus<PlayerLowHealthEvent>.Unsubscribe(OnLowHealth);
         EventBus<GameStateChangedEvent>.Unsubscribe(OnGameStateChanged);
+        EventBus<SuperMeterChangedEvent>.Unsubscribe(OnSuperMeterChanged);
+    }
+
+    private void Start()
+    {
+        RefreshSuperMeter();
     }
 
     /// <summary>Updates health display and triggers damage flash.</summary>
@@ -108,6 +115,11 @@ public class HUDController : MonoBehaviour
         _healthWidget?.SetLowHealthWarning(e.IsLow);
     }
 
+    public void OnSuperMeterChanged(SuperMeterChangedEvent e)
+    {
+        _superMeterWidget?.SetValue(e.ChargeNormalized, e.CurrentCharges, e.ChargesRequired, e.IsReady);
+    }
+
     /// <summary>Shows or hides the entire HUD based on the current game state.</summary>
     public void OnGameStateChanged(GameStateChangedEvent e)
     {
@@ -144,5 +156,19 @@ public class HUDController : MonoBehaviour
             ammoTypeId,
             _playerCombat.ActiveWeapon.CurrentAmmo,
             string.IsNullOrEmpty(ammoTypeId) ? 999 : _playerInventory.GetAmmo(ammoTypeId));
+    }
+
+    private void RefreshSuperMeter()
+    {
+        ResolvePlayerReferences();
+
+        if (_playerCombat == null)
+            return;
+
+        _superMeterWidget?.SetValue(
+            _playerCombat.SuperChargeNormalized,
+            _playerCombat.SuperKillCharge,
+            _playerCombat.SuperKillsRequired,
+            _playerCombat.IsSuperReady);
     }
 }

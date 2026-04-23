@@ -6,6 +6,8 @@ using UnityEngine;
 /// </summary>
 public class WeaponPickup : PickupBase
 {
+    private static readonly Color WeaponFeedColor = new Color(1f, 0.52f, 0.18f, 1f);
+
     [SerializeField] private WeaponData _weaponData;
 
     protected override bool ExecutePickup(PlayerInventory inventory)
@@ -21,7 +23,17 @@ public class WeaponPickup : PickupBase
 
         inventory.AddItem(_weaponData.WeaponId);
 
+        string displayName = !string.IsNullOrWhiteSpace(_weaponData.DisplayName)
+            ? _weaponData.DisplayName.ToUpperInvariant()
+            : "WEAPON";
+
         EventBus<WeaponPickedUpEvent>.Raise(new WeaponPickedUpEvent { WeaponData = _weaponData });
+        EventBus<PickupFeedMessageEvent>.Raise(new PickupFeedMessageEvent
+        {
+            Message = $"PICKED UP {displayName}",
+            Tint    = WeaponFeedColor
+        });
+
         return true;
     }
 }

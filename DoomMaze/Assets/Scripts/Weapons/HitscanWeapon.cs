@@ -10,6 +10,8 @@ using UnityEngine;
 /// </summary>
 public class HitscanWeapon : WeaponBase
 {
+    private const int MaxHitCount = 16;
+
     [SerializeField] private LayerMask _hitMask;
 
     [Header("Tracer")]
@@ -21,7 +23,7 @@ public class HitscanWeapon : WeaponBase
     [Header("Muzzle Flash")]
     [SerializeField] private MuzzleFlash _muzzleFlash;
 
-    private readonly RaycastHit[] _hitBuffer = new RaycastHit[1];
+    private readonly RaycastHit[] _hitBuffer = new RaycastHit[MaxHitCount];
 
     /// <inheritdoc/>
     protected override void ExecuteFire()
@@ -46,19 +48,13 @@ public class HitscanWeapon : WeaponBase
             }
 
             Vector3 endPoint;
-            int hits = Physics.RaycastNonAlloc(origin, direction, _hitBuffer, _data.Range, _hitMask);
+            int hits = Physics.RaycastNonAlloc(origin, direction, _hitBuffer, _data.Range, _hitMask, QueryTriggerInteraction.Ignore);
 
-            if (hits > 0)
+            if (TryGetClosestHit(hits, out RaycastHit hit))
             {
-                RaycastHit hit = _hitBuffer[0];
                 endPoint = hit.point;
 
-                hit.collider.GetComponentInParent<IDamageable>()?.TakeDamage(new DamageInfo
-                {
-                    Amount = _data.Damage,
-                    Type   = DamageType.Physical,
-                    Source = gameObject
-                });
+                ApplyDirectDamage(hit.collider);
 
                 ImpactFXManager.Instance?.Spawn(hit.point, hit.normal);
             }
@@ -123,5 +119,54 @@ public class HitscanWeapon : WeaponBase
         }
 
         Destroy(tracer);
+    }
+
+    private bool TryGetClosestHit(int hitCount, out RaycastHit closestHit)
+    {
+        closestHit = default(RaycastHit);
+
+        float closestDistance = float.MaxValue;
+        bool foundHit = false;
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            RaycastHit hit = _hitBuffer[i];
+            if (hit.collider == null)
+                continue;
+
+            if (hit.distance < closestDistance)
+            {
+                closestDistance = hit.distance;
+                closestHit = hit;
+                foundHit = true;
+            }
+        }
+
+        return foundHit;
+    }
+
+    private void ApplyDirectDamage(Collider hitCollider)
+    {
+        if (hitCollider == null)
+            return;
+
+        HealthComponent health = hitCollider.GetComponentInParent<HealthComponent>();
+        if (health != null && health.IsAlive)
+        {
+            health.TakeDamage(new DamageInfo
+            {
+                Amount = _data.Damage,
+                Type = DamageType.Physical,
+                Source = gameObject
+            });
+            return;
+        }
+
+        hitCollider.GetComponentInParent<IDamageable>()?.TakeDamage(new DamageInfo
+        {
+            Amount = _data.Damage,
+            Type = DamageType.Physical,
+            Source = gameObject
+        });
     }
 }

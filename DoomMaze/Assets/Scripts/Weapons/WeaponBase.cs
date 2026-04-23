@@ -88,7 +88,7 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
         EventBus<WeaponFiredEvent>.Raise(new WeaponFiredEvent { Data = _data });
         RaiseAmmoChanged();
 
-        AudioManager.Instance?.PlaySfx(_data.FireSounds);
+        PlayFireAudio();
 
         if (CurrentAmmo <= 0)
         {
@@ -200,5 +200,13 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
     /// Subclass-specific attack implementation (raycast, overlap sphere, projectile, etc.).
     /// Called by <see cref="Fire"/> after all guards and ammo consumption pass.
     /// </summary>
+    protected virtual void PlayFireAudio()
+    {
+        if (_data == null)
+            return;
+
+        AudioManager.Instance?.PlaySfx(_data.FireSounds);
+    }
+
     protected abstract void ExecuteFire();
 }

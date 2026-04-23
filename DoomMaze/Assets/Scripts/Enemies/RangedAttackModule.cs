@@ -1,23 +1,19 @@
 using UnityEngine;
 
 /// <summary>
-/// Ranged hitscan attack module. Fires a single ray toward the player at intervals
-/// defined by <see cref="EnemyData.AttackRate"/>. Uses <see cref="Physics.RaycastNonAlloc"/>
-/// with a pre-allocated <see cref="RaycastHit"/> buffer — no per-shot heap allocations.
+/// Ranged attack module that spawns a simple projectile toward the player at
+/// intervals defined by <see cref="EnemyData.AttackRate"/>.
 /// </summary>
 public class RangedAttackModule : MonoBehaviour, IAttackModule
 {
-    [SerializeField] private LayerMask _playerLayerMask; // Inspector: assign the "Player" layer
+    [SerializeField] private Vector3 _muzzleOffset = new Vector3(0f, 0.95f, 0.55f);
+    [SerializeField] private float _projectileSpeed = 16f;
+    [SerializeField] private float _projectileRadius = 0.22f;
 
-    // Pre-allocated single-target buffer — enemies always aim at one target.
-    private readonly RaycastHit[] _hitBuffer = new RaycastHit[1];
-
-    private EnemyData  _data;
-    private EnemyBase  _enemyBase;
-    private Transform  _playerTransform;
-    private float      _attackTimer;
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    private EnemyData _data;
+    private EnemyBase _enemyBase;
+    private Transform _playerTransform;
+    private float _attackTimer;
 
     private void Awake()
     {
@@ -28,78 +24,86 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
 
     private void Start()
     {
-        if (_enemyBase == null) return;
+        if (_enemyBase == null)
+            return;
 
-        _data            = _enemyBase.Data;
-        _playerTransform = _enemyBase.PlayerTransform;
-
+        _data = _enemyBase.Data;
         if (_data == null)
-            Debug.LogError("[RangedAttackModule] EnemyData is null — assign EnemyData to EnemyBase.");
+            Debug.LogError("[RangedAttackModule] EnemyData is null - assign EnemyData to EnemyBase.");
 
-        if (_playerTransform == null)
-            Debug.LogWarning("[RangedAttackModule] Player transform not cached on EnemyBase.");
+        CachePlayerReference(logWarnings: true);
     }
-
-    // ── IAttackModule ─────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
     public void OnAttackEnter()
     {
-        // Start with timer expired so the first shot fires immediately on entry.
+        // Start with timer expired so the first attack fires immediately on entry.
         _attackTimer = 0f;
     }
 
     /// <inheritdoc/>
     public void Tick()
     {
-        if (_data == null) return;
+        if (_data == null)
+            return;
+
+        CachePlayerReference(logWarnings: false);
 
         _attackTimer -= Time.deltaTime;
         if (_attackTimer <= 0f)
         {
-            FireRay();
+            FireProjectile();
             _attackTimer = 1f / _data.AttackRate;
         }
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
-
-    private void FireRay()
+    private void FireProjectile()
     {
-        if (_playerTransform == null) return;
+        CachePlayerReference(logWarnings: false);
 
-        // Aim at the player's center-of-mass offset (1 m up from feet).
-        Vector3 targetPosition = _playerTransform.position + Vector3.up * 1f;
-        Vector3 direction      = (targetPosition - transform.position).normalized;
+        if (_playerTransform == null)
+            return;
 
-        int hitCount = Physics.RaycastNonAlloc(
-            transform.position,
-            direction,
-            _hitBuffer,
+        Vector3 origin = transform.TransformPoint(_muzzleOffset);
+        Vector3 targetPosition = _playerTransform.position + Vector3.up;
+        Vector3 direction = targetPosition - origin;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+            return;
+
+        GameObject projectileObject = new GameObject($"{gameObject.name}_Projectile");
+        EnemyProjectile projectile = projectileObject.AddComponent<EnemyProjectile>();
+        projectile.Launch(
+            gameObject,
+            origin,
+            direction.normalized,
+            _data.AttackDamage,
+            _data.AttackDamageType,
             _data.AttackRange,
-            _playerLayerMask
+            _projectileSpeed,
+            _projectileRadius
         );
 
-        if (hitCount > 0)
-        {
-            IDamageable damageable = _hitBuffer[0].collider.GetComponent<IDamageable>();
-            damageable?.TakeDamage(new DamageInfo
-            {
-                Amount = _data.AttackDamage,
-                Type   = _data.AttackDamageType,
-                Source = gameObject
-            });
-        }
-
         AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+    }
+
+    private void CachePlayerReference(bool logWarnings)
+    {
+        if (_playerTransform == null && _enemyBase != null)
+            _playerTransform = _enemyBase.PlayerTransform;
+
+        if (_playerTransform == null && logWarnings)
+            Debug.LogWarning("[RangedAttackModule] Player transform not cached on EnemyBase.");
     }
 
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
-        if (_data == null || _playerTransform == null) return;
+        if (_data == null || _playerTransform == null)
+            return;
+
         UnityEditor.Handles.color = new Color(1f, 0.6f, 0f, 0.6f);
-        UnityEditor.Handles.DrawLine(transform.position, _playerTransform.position + Vector3.up);
+        UnityEditor.Handles.DrawLine(transform.TransformPoint(_muzzleOffset), _playerTransform.position + Vector3.up);
     }
 #endif
 }
