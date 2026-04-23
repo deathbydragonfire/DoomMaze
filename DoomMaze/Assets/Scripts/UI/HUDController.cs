@@ -2,7 +2,8 @@ using UnityEngine;
 
 /// <summary>
 /// Root MonoBehaviour on the HUD Canvas. Subscribes to all relevant EventBus events
-/// and routes data to the correct widget. Visibility is driven by <see cref="GameStateChangedEvent"/>.
+/// and routes data to the correct widget. Visibility is driven by <see cref="GameStateChangedEvent"/>
+/// unless a scene-local override is applied.
 /// </summary>
 public class HUDController : MonoBehaviour
 {
@@ -18,10 +19,13 @@ public class HUDController : MonoBehaviour
     private Canvas          _canvas;
     private PlayerCombat    _playerCombat;
     private PlayerInventory _playerInventory;
+    private bool            _isGameStateVisible = true;
+    private bool?           _localVisibilityOverride;
 
     private void Awake()
     {
         _canvas = GetComponent<Canvas>();
+        _isGameStateVisible = GameManager.Instance == null || GameManager.Instance.CurrentState == GameState.Playing;
 
         if (_healthWidget     == null) Debug.LogError("[HUDController] _healthWidget is not assigned.");
         if (_armorWidget      == null) Debug.LogError("[HUDController] _armorWidget is not assigned.");
@@ -31,6 +35,8 @@ public class HUDController : MonoBehaviour
         if (_pickupFeedWidget == null) Debug.LogError("[HUDController] _pickupFeedWidget is not assigned.");
         if (_damageFlashWidget == null) Debug.LogError("[HUDController] _damageFlashWidget is not assigned.");
         if (_superMeterWidget == null) Debug.LogError("[HUDController] _superMeterWidget is not assigned.");
+
+        RefreshCanvasVisibility();
     }
 
     private void OnEnable()
@@ -64,6 +70,18 @@ public class HUDController : MonoBehaviour
     private void Start()
     {
         RefreshSuperMeter();
+    }
+
+    public void SetLocalVisibilityOverride(bool isVisible)
+    {
+        _localVisibilityOverride = isVisible;
+        RefreshCanvasVisibility();
+    }
+
+    public void ClearLocalVisibilityOverride()
+    {
+        _localVisibilityOverride = null;
+        RefreshCanvasVisibility();
     }
 
     /// <summary>Updates health display and triggers damage flash.</summary>
@@ -123,10 +141,8 @@ public class HUDController : MonoBehaviour
     /// <summary>Shows or hides the entire HUD based on the current game state.</summary>
     public void OnGameStateChanged(GameStateChangedEvent e)
     {
-        if (_canvas != null)
-        {
-            _canvas.enabled = e.NewState == GameState.Playing;
-        }
+        _isGameStateVisible = e.NewState == GameState.Playing;
+        RefreshCanvasVisibility();
     }
 
     private void ResolvePlayerReferences()
@@ -170,5 +186,13 @@ public class HUDController : MonoBehaviour
             _playerCombat.SuperKillCharge,
             _playerCombat.SuperKillsRequired,
             _playerCombat.IsSuperReady);
+    }
+
+    private void RefreshCanvasVisibility()
+    {
+        if (_canvas == null)
+            return;
+
+        _canvas.enabled = _localVisibilityOverride ?? _isGameStateVisible;
     }
 }

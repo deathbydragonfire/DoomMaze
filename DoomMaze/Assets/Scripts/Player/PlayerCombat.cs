@@ -46,6 +46,7 @@ public class PlayerCombat : MonoBehaviour
     public bool IsSuperReady => _superKillCharge >= GetKillsRequiredForSuper();
     public int SuperKillCharge => _superKillCharge;
     public int SuperKillsRequired => GetKillsRequiredForSuper();
+    public bool IsCombatEnabled => _isCombatEnabled;
 
     [Header("Super")]
     [SerializeField] private int _killsRequiredForSuper = DefaultKillsRequiredForSuper;
@@ -90,6 +91,7 @@ public class PlayerCombat : MonoBehaviour
     private bool _isFiring;
     private bool _inputBound;
     private bool _isUsingSuper;
+    private bool _isCombatEnabled = true;
     private int _superKillCharge;
     private Coroutine _superRoutine;
 
@@ -188,7 +190,7 @@ public class PlayerCombat : MonoBehaviour
 
     private void Update()
     {
-        if (_isUsingSuper)
+        if (!_isCombatEnabled || _isUsingSuper)
             return;
 
         if (_isFiring && _activeWeapon != null && _activeWeapon.Data?.FireMode == FireMode.Auto)
@@ -222,9 +224,20 @@ public class PlayerCombat : MonoBehaviour
         _quickMeleeWeapon = meleeWeapon;
     }
 
+    public void SetCombatEnabled(bool isEnabled)
+    {
+        if (_isCombatEnabled == isEnabled)
+            return;
+
+        _isCombatEnabled = isEnabled;
+
+        if (!isEnabled)
+            CancelCombatInput();
+    }
+
     private void OnFirePerformed(InputAction.CallbackContext context)
     {
-        if (_isUsingSuper)
+        if (!_isCombatEnabled || _isUsingSuper)
             return;
 
         _isFiring = true;
@@ -241,7 +254,7 @@ public class PlayerCombat : MonoBehaviour
 
     private void OnAltFirePerformed(InputAction.CallbackContext context)
     {
-        if (_isUsingSuper)
+        if (!_isCombatEnabled || _isUsingSuper)
             return;
 
         _activeWeapon?.AltFire();
@@ -249,7 +262,7 @@ public class PlayerCombat : MonoBehaviour
 
     private void OnMeleePerformed(InputAction.CallbackContext context)
     {
-        if (_isUsingSuper)
+        if (!_isCombatEnabled || _isUsingSuper)
             return;
 
         _quickMeleeWeapon?.Fire();
@@ -257,6 +270,9 @@ public class PlayerCombat : MonoBehaviour
 
     private void OnUseSuperPerformed(InputAction.CallbackContext context)
     {
+        if (!_isCombatEnabled)
+            return;
+
         TryUseSuper();
     }
 
@@ -271,7 +287,7 @@ public class PlayerCombat : MonoBehaviour
 
     private void TryUseSuper()
     {
-        if (!IsSuperReady || _isUsingSuper)
+        if (!_isCombatEnabled || !IsSuperReady || _isUsingSuper)
             return;
 
         Camera cam = Camera.main;
@@ -289,6 +305,12 @@ public class PlayerCombat : MonoBehaviour
             StopCoroutine(_superRoutine);
 
         _superRoutine = StartCoroutine(UseSuperRoutine(cam));
+    }
+
+    private void CancelCombatInput()
+    {
+        _isFiring = false;
+        _activeWeapon?.StopFiring();
     }
 
     private IEnumerator UseSuperRoutine(Camera cam)

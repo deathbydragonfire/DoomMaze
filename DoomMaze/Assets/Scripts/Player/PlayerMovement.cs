@@ -171,6 +171,51 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
+    public void TeleportTo(Vector3 worldPosition, Quaternion worldRotation)
+    {
+        if (_characterController == null)
+            return;
+
+        bool wasEnabled = _characterController.enabled;
+        if (wasEnabled)
+            _characterController.enabled = false;
+
+        transform.position = worldPosition;
+        transform.rotation = Quaternion.Euler(0f, worldRotation.eulerAngles.y, 0f);
+        SetLookPitch(worldRotation.eulerAngles.x);
+        ResetMotionState();
+
+        if (wasEnabled)
+            _characterController.enabled = true;
+
+        IsGrounded = _characterController.isGrounded;
+        _wasGrounded = IsGrounded;
+    }
+
+    public void ResetMotionState()
+    {
+        _moveInput = Vector2.zero;
+        _lookInput = Vector2.zero;
+        _jumpRequested = false;
+        _queuedAirJump = false;
+        _isSprinting = false;
+        _verticalVelocity = 0f;
+        _bonusVelocity = Vector3.zero;
+        Velocity = Vector3.zero;
+        CurrentSpeedRatio = 0f;
+        CurrentState = MovementState.Idle;
+        _peakFallSpeed = 0f;
+        _airJumpRedirectTimer = 0f;
+        _isDashing = false;
+        _dashTimer = 0f;
+        _dashCooldownTimer = 0f;
+        _dashDirection = Vector3.zero;
+        _wasAirborne = false;
+        _remainingAirJumps = GetMaxJumpCount() - 1;
+        _remainingWallJumps = GetMaxWallJumpCount();
+        StopWallRun();
+    }
+
     private void GatherInput()
     {
         if (InputManager.Instance == null)
@@ -756,6 +801,16 @@ public class PlayerMovement : MonoBehaviour
         _cameraTransform.localEulerAngles = new Vector3(_currentPitch, 0f, 0f);
     }
 
+    private void SetLookPitch(float pitch)
+    {
+        if (_stats == null || _cameraTransform == null)
+            return;
+
+        _currentPitch = NormalizeAngle(pitch);
+        _currentPitch = Mathf.Clamp(_currentPitch, -_stats.MaxLookAngle, _stats.MaxLookAngle);
+        _cameraTransform.localEulerAngles = new Vector3(_currentPitch, 0f, 0f);
+    }
+
     private void UpdateState()
     {
         bool isMoving = _moveInput.sqrMagnitude > 0.01f;
@@ -824,5 +879,16 @@ public class PlayerMovement : MonoBehaviour
             _dashCooldownTimer = 0f;
             StopWallRun();
         }
+    }
+
+    private static float NormalizeAngle(float angle)
+    {
+        while (angle > 180f)
+            angle -= 360f;
+
+        while (angle < -180f)
+            angle += 360f;
+
+        return angle;
     }
 }
