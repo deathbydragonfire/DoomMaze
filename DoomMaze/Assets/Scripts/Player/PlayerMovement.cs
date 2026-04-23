@@ -31,6 +31,7 @@ public class PlayerMovement : MonoBehaviour
     private bool    _isSprinting;
     private bool    _isCrouching;
     private bool    _jumpRequested;
+    private bool    _queuedAirJump;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ public class PlayerMovement : MonoBehaviour
     private bool  _wasSprinting;
     private bool  _wasAirborne;
     private float _peakFallSpeed;
+    private int   _remainingAirJumps;
+    private float _airJumpRedirectTimer;
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -51,6 +54,8 @@ public class PlayerMovement : MonoBehaviour
 
         if (_stats == null)
             Debug.LogError("[PlayerMovement] _stats (PlayerStats) is not assigned. Assign in the Inspector.");
+
+        _remainingAirJumps = GetMaxJumpCount() - 1;
     }
 
     private bool _inputBound;
@@ -116,8 +121,21 @@ public class PlayerMovement : MonoBehaviour
 
     private void OnJumpPerformed(InputAction.CallbackContext context)
     {
-        if (_canMove && IsGrounded)
+        if (!_canMove || _isNoclip || _stats == null) return;
+
+        if (IsGrounded)
+        {
             _jumpRequested = true;
+            _queuedAirJump = false;
+            return;
+        }
+
+        if (_remainingAirJumps <= 0) return;
+
+        _remainingAirJumps--;
+        _jumpRequested         = true;
+        _queuedAirJump         = true;
+        _airJumpRedirectTimer  = GetAirJumpRedirectDuration();
     }
 
     // ── Movement ──────────────────────────────────────────────────────────────
@@ -141,7 +159,7 @@ public class PlayerMovement : MonoBehaviour
         Vector3 localMove = new Vector3(_moveInput.x, 0f, _moveInput.y) * speed;
 
         if (!IsGrounded)
-            localMove *= _stats.AirControlFactor;
+            localMove *= GetCurrentAirControlFactor();
 
         Vector3 worldMove = transform.TransformDirection(localMove);
         worldMove.y = _verticalVelocity;
@@ -150,6 +168,12 @@ public class PlayerMovement : MonoBehaviour
 
         IsGrounded = _characterController.isGrounded;
         Velocity   = _characterController.velocity;
+
+        if (IsGrounded)
+        {
+            _remainingAirJumps   = GetMaxJumpCount() - 1;
+            _airJumpRedirectTimer = 0f;
+        }
 
         if (!IsGrounded && _verticalVelocity < 0f)
             _peakFallSpeed = Mathf.Max(_peakFallSpeed, Mathf.Abs(_verticalVelocity));
@@ -169,21 +193,53 @@ public class PlayerMovement : MonoBehaviour
     private void ApplyGravity()
     {
         if (IsGrounded && _verticalVelocity < 0f)
-        {
             _verticalVelocity = -2f; // keep pressed against ground
 
-            if (_jumpRequested)
-            {
-                // v = sqrt(2 * g * h)
-                _verticalVelocity = Mathf.Sqrt(2f * Mathf.Abs(Physics.gravity.y) * _stats.GravityScale * _stats.JumpHeight);
-                _jumpRequested    = false;
-            }
+        if (_jumpRequested && (IsGrounded || _queuedAirJump))
+        {
+            // v = sqrt(2 * g * h)
+            _verticalVelocity = Mathf.Sqrt(2f * Mathf.Abs(Physics.gravity.y) * _stats.GravityScale * _stats.JumpHeight);
+            _jumpRequested    = false;
+            _queuedAirJump    = false;
+            return;
         }
-        else
+
+        if (!IsGrounded)
         {
             _verticalVelocity += Physics.gravity.y * _stats.GravityScale * Time.deltaTime;
-            _jumpRequested     = false;
         }
+
+        _jumpRequested = false;
+        _queuedAirJump = false;
+    }
+
+    private float GetCurrentAirControlFactor()
+    {
+        float airControlFactor = _stats.AirControlFactor;
+
+        if (_airJumpRedirectTimer <= 0f)
+            return airControlFactor;
+
+        _airJumpRedirectTimer = Mathf.Max(0f, _airJumpRedirectTimer - Time.deltaTime);
+        return Mathf.Max(airControlFactor, GetAirJumpRedirectControlFactor());
+    }
+
+    private int GetMaxJumpCount()
+    {
+        if (_stats == null) return 2;
+        return Mathf.Max(1, _stats.MaxJumpCount == 0 ? 2 : _stats.MaxJumpCount);
+    }
+
+    private float GetAirJumpRedirectControlFactor()
+    {
+        if (_stats == null) return 1f;
+        return _stats.AirJumpRedirectControlFactor <= 0f ? 1f : _stats.AirJumpRedirectControlFactor;
+    }
+
+    private float GetAirJumpRedirectDuration()
+    {
+        if (_stats == null) return 0.2f;
+        return _stats.AirJumpRedirectDuration <= 0f ? 0.2f : _stats.AirJumpRedirectDuration;
     }
 
     // ── Look ──────────────────────────────────────────────────────────────────

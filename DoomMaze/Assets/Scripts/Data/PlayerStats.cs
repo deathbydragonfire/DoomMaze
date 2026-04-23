@@ -18,8 +18,11 @@ public class PlayerStats : ScriptableObject
     public float SprintMultiplier      = 1.6f;
     public float CrouchSpeedMultiplier = 0.55f;
     public float JumpHeight            = 1.5f;
+    [Min(1)] public int MaxJumpCount   = 2;
     public float GravityScale          = 2f;
     public float AirControlFactor      = 0.4f;
+    [Range(0f, 1f)] public float AirJumpRedirectControlFactor = 1f;
+    [Min(0f)] public float AirJumpRedirectDuration            = 0.2f;
     public float GroundCheckDistance   = 0.12f;
 
     [Header("Look")]
