@@ -19,11 +19,17 @@ public class TutorialTriggerRelay : MonoBehaviour
     {
         Manager?.HandleTrigger(this, other);
     }
+
+    private void OnTriggerExit(Collider other)
+    {
+        Manager?.HandleTriggerExit(this, other);
+    }
 }
 
 public enum TutorialTriggerType
 {
     Checkpoint,
     FailRespawn,
-    CombatAndHudUnlock
+    CombatAndHudUnlock,
+    FogZone
 }
