@@ -27,12 +27,22 @@ public struct GameLoadedEvent { }
 
 public struct RunResetEvent { }
 
+public struct MazePopulatedEvent
+{
+    public MazePopulator Populator;
+}
+
 // ── Phase 2: Player events ────────────────────────────────────────────────────
 
 public struct PlayerDamagedEvent   { public int CurrentHealth; public int MaxHealth; public DamageInfo Info; }
 public struct PlayerDiedEvent      { }
 public struct PlayerHealedEvent    { public int CurrentHealth; public int MaxHealth; }
 public struct PlayerLowHealthEvent { public bool IsLow; }
+public struct PlayerDecayChangedEvent
+{
+    public float DecayNormalized;
+    public float GrayscaleAmount;
+}
 public struct ArmorChangedEvent    { public int CurrentArmor; }
 public struct InventoryChangedEvent{ }
 public struct WeaponEquippedEvent  { public int SlotIndex; }
@@ -68,6 +78,11 @@ public struct SwitchActivatedEvent    { }
 public struct LevelExitTriggeredEvent { }
 public struct MusicZoneChangedEvent   { public string TrackId; }
 public struct InteractAttemptedEvent  { public bool HitInteractable; }
+public struct UpgradeRoomPresenceChangedEvent
+{
+    public UpgradeRoomController Room;
+    public bool IsPlayerInside;
+}
 
 // ── Phase 7: Audio events ─────────────────────────────────────────────────────
 public struct SfxRequestEvent { public UnityEngine.AudioClip Clip; }

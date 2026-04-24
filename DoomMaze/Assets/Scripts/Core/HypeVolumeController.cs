@@ -36,12 +36,15 @@ public class HypeVolumeController : MonoBehaviour
     private Coroutine _vignetteRoutine;
     private Coroutine _dashRoutine;
     private Coroutine _glitchRoutine;
+    private float _decaySaturation;
+    private float _temporarySaturationOffset;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void Awake()
     {
         _volume  = GetComponent<Volume>();
+        _volume.weight = 1f;
         _profile = _volume.profile;
 
         if (!_profile.TryGet(out _chromaticAberration))
@@ -104,6 +107,13 @@ public class HypeVolumeController : MonoBehaviour
         if (_glitchRoutine != null)
             StopCoroutine(_glitchRoutine);
         _glitchRoutine = StartCoroutine(PulseGlitchRoutine(intensity, durationMultiplier));
+    }
+
+    /// <summary>Sets persistent black-and-white pressure from the secondary decay bar.</summary>
+    public void SetDecayGrayscale(float grayscaleAmount)
+    {
+        _decaySaturation = Mathf.Lerp(0f, -100f, Mathf.Clamp01(grayscaleAmount));
+        ApplySaturation();
     }
 
     // ── Coroutines ────────────────────────────────────────────────────────────
@@ -231,7 +241,8 @@ public class HypeVolumeController : MonoBehaviour
                 _chromaticAberration.intensity.value = v * caTarget;
                 _lensDistortion.intensity.value      = v * ldTarget;
                 _colorAdjustments.contrast.value     = v * contrastTarget;
-                _colorAdjustments.saturation.value   = v * saturationTarget;
+                _temporarySaturationOffset           = v * saturationTarget;
+                ApplySaturation();
                 _vignette.intensity.value            = v * vignetteTarget;
             },
             0f, 1f, riseDuration);
@@ -245,7 +256,8 @@ public class HypeVolumeController : MonoBehaviour
                 _chromaticAberration.intensity.value = v * caTarget;
                 _lensDistortion.intensity.value      = v * ldTarget;
                 _colorAdjustments.contrast.value     = v * contrastTarget;
-                _colorAdjustments.saturation.value   = v * saturationTarget;
+                _temporarySaturationOffset           = v * saturationTarget;
+                ApplySaturation();
                 _vignette.intensity.value            = v * vignetteTarget;
             },
             1f, 0f, fallDuration);
@@ -253,7 +265,8 @@ public class HypeVolumeController : MonoBehaviour
         _chromaticAberration.intensity.value = 0f;
         _lensDistortion.intensity.value      = 0f;
         _colorAdjustments.contrast.value     = 0f;
-        _colorAdjustments.saturation.value   = 0f;
+        _temporarySaturationOffset           = 0f;
+        ApplySaturation();
         _vignette.intensity.value            = 0f;
         _glitchRoutine = null;
     }
@@ -272,8 +285,21 @@ public class HypeVolumeController : MonoBehaviour
         setter(to);
     }
 
+    private void ApplySaturation()
+    {
+        if (_colorAdjustments == null)
+            return;
+
+        _colorAdjustments.active = true;
+        _colorAdjustments.saturation.overrideState = true;
+        _colorAdjustments.saturation.value = Mathf.Clamp(_decaySaturation + _temporarySaturationOffset, -100f, 100f);
+    }
+
     private void ResetAllEffects()
     {
+        _decaySaturation = 0f;
+        _temporarySaturationOffset = 0f;
+
         if (_chromaticAberration != null) _chromaticAberration.intensity.value = 0f;
         if (_lensDistortion      != null) _lensDistortion.intensity.value      = 0f;
         if (_colorAdjustments    != null) _colorAdjustments.contrast.value     = 0f;

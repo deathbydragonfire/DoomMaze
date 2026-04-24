@@ -45,7 +45,7 @@ public class ArmorComponent : MonoBehaviour
     /// </summary>
     public DamageInfo MitigateDamage(DamageInfo info)
     {
-        if (CurrentArmor <= 0)
+        if (info.IgnoreArmor || CurrentArmor <= 0)
             return info;
 
         float absorptionRate = info.Type switch
@@ -67,9 +67,11 @@ public class ArmorComponent : MonoBehaviour
 
         return new DamageInfo
         {
-            Amount = info.Amount - absorbed,
-            Type   = info.Type,
-            Source = info.Source
+            Amount                = info.Amount - absorbed,
+            Type                  = info.Type,
+            Source                = info.Source,
+            IgnoreInvulnerability = info.IgnoreInvulnerability,
+            IgnoreArmor           = info.IgnoreArmor
         };
     }
 

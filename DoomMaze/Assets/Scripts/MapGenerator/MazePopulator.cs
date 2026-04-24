@@ -119,6 +119,35 @@ public class MazePopulator : MonoBehaviour
         public MapGenerator.RoomNode Node; // null for injected connectors
     }
 
+    public readonly struct GeneratedRoomPlacement
+    {
+        public readonly GameObject Instance;
+        public readonly MazePrefab Prefab;
+        public readonly MapGenerator.RoomType Type;
+        public readonly bool HasNodeType;
+        public readonly Vector3 Position;
+        public readonly Quaternion Rotation;
+        public readonly Bounds Bounds;
+
+        public GeneratedRoomPlacement(
+            GameObject instance,
+            MazePrefab prefab,
+            MapGenerator.RoomType type,
+            bool hasNodeType,
+            Vector3 position,
+            Quaternion rotation,
+            Bounds bounds)
+        {
+            Instance = instance;
+            Prefab = prefab;
+            Type = type;
+            HasNodeType = hasNodeType;
+            Position = position;
+            Rotation = rotation;
+            Bounds = bounds;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Runtime state
     // -------------------------------------------------------------------------
@@ -127,6 +156,7 @@ public class MazePopulator : MonoBehaviour
     private readonly List<GameObject> _spawnedRooms = new();
     private readonly List<PlacedRoom> _placedRooms  = new();
     private readonly List<(GameObject instance, PlacedRoom placed)> _spawnedRoomRecords = new();
+    private readonly List<GeneratedRoomPlacement> _generatedRooms = new();
     private NavMeshSurface _runtimeNavMeshSurface;
 
     // -------------------------------------------------------------------------
@@ -201,6 +231,12 @@ public class MazePopulator : MonoBehaviour
             ArmEnemyRoomsFromPlayerStart(playerStartPosition);
         else
             ArmEnemyRoomsFromCurrentPlayer();
+
+        DecayWallController decayWallController = GetComponent<DecayWallController>();
+        if (decayWallController != null && decayWallController.DecayEnabled)
+            decayWallController.InitializeFromPopulator(this);
+
+        EventBus<MazePopulatedEvent>.Raise(new MazePopulatedEvent { Populator = this });
     }
 
     /// <summary>Destroys all rooms spawned by this populator.</summary>
@@ -211,6 +247,7 @@ public class MazePopulator : MonoBehaviour
 
         _spawnedRooms.Clear();
         _spawnedRoomRecords.Clear();
+        _generatedRooms.Clear();
         _placedRooms.Clear();
     }
 
@@ -501,6 +538,20 @@ public class MazePopulator : MonoBehaviour
         _spawnedRooms.Add(instance);
         _spawnedRoomRecords.Add((instance, placed));
 
+        Bounds bounds = TryGetWorldBounds(instance, out Bounds worldBounds)
+            ? worldBounds
+            : new Bounds(placed.Position, Vector3.one);
+
+        bool hasNodeType = placed.Node != null;
+        MapGenerator.RoomType type = hasNodeType ? placed.Node.Type : MapGenerator.RoomType.Hallway;
+        _generatedRooms.Add(new GeneratedRoomPlacement(
+            instance,
+            placed.Prefab,
+            type,
+            hasNodeType,
+            placed.Position,
+            placed.Rotation,
+            bounds));
     }
 
     private void BuildRuntimeNavMesh()
@@ -542,6 +593,10 @@ public class MazePopulator : MonoBehaviour
 
     private void ConfigureGeneratedEnemyRooms()
     {
+        float enemySpawnRateMultiplier = Mathf.Max(0.01f, GameDifficultyManager.CurrentProfile.EnemySpawnRateMultiplier);
+        float scaledEliminateSpawnDuration = eliminateSpawnDuration / enemySpawnRateMultiplier;
+        float scaledWaveSpawnInterval = waveSpawnInterval / enemySpawnRateMultiplier;
+
         foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
         {
             if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Enemy)
@@ -565,10 +620,10 @@ public class MazePopulator : MonoBehaviour
                 generatedDoorVerticalOffset,
                 roomSplashFont,
                 eliminateEnemyCount,
-                eliminateSpawnDuration,
+                scaledEliminateSpawnDuration,
                 eliminateMeleeWeight,
                 waveDuration,
-                waveSpawnInterval,
+                scaledWaveSpawnInterval,
                 waveMaxAlive,
                 waveMeleeWeight);
         }
@@ -877,6 +932,8 @@ public class MazePopulator : MonoBehaviour
 
     /// <summary>Total number of rooms (including injected connectors) in the current layout.</summary>
     public int PlacedRoomCount => _placedRooms.Count;
+
+    public IReadOnlyList<GeneratedRoomPlacement> GeneratedRooms => _generatedRooms;
 
     /// <summary>
     /// Returns true if at least one placed room has the given node type and its

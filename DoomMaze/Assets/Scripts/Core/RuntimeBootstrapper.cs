@@ -24,8 +24,19 @@ public class RuntimeBootstrapper : MonoBehaviour
         yield return null;
 
         PauseManager.Instance?.TryBindInput();
+        EnsurePlayerDecayComponent();
 
         if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.Playing)
             GameManager.Instance.SetState(GameState.Playing);
+    }
+
+    private static void EnsurePlayerDecayComponent()
+    {
+        GameObject player = GameObject.FindWithTag("Player");
+        if (player == null)
+            return;
+
+        if (player.GetComponentInParent<PlayerDecayComponent>() == null)
+            player.AddComponent<PlayerDecayComponent>();
     }
 }

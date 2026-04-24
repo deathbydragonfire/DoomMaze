@@ -10,6 +10,9 @@ using UnityEngine.UI;
 /// </summary>
 public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
 {
+    private const string DifficultyMenuRootName = "DifficultyMenu";
+    private const string DifficultyMenuFontPath = "Assets/Fonts/Unutterable_Font_1_07/TrueType (.ttf)/Unutterable-Regular SDF 1.asset";
+
     [SerializeField] private Button     _continueButton;
     [SerializeField] private GameObject _settingsPanel;
     [SerializeField] private TMP_FontAsset _menuFont;
@@ -43,6 +46,8 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
     private bool[] _menuButtonInteractableStates;
     private Vector3 _shakeBaseLocalPosition;
     private VolumeProfile _runtimeGlitchProfile;
+    private RectTransform _difficultyMenuRoot;
+    private readonly List<MenuObjectState> _difficultyMenuObjectStates = new List<MenuObjectState>();
 
     private void Awake()
     {
@@ -81,6 +86,7 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
             _newGameTransitionCoroutine = null;
         }
 
+        RestoreDifficultyMenuReplacedObjects();
         ResetTransitionVisuals();
     }
 
@@ -92,12 +98,22 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
         ApplyMenuFont();
     }
 
-    /// <summary>Deletes any existing save and loads the Gameplay scene.</summary>
+    /// <summary>Opens difficulty selection before starting a fresh run.</summary>
     public void OnNewGame()
     {
         if (_isNewGameTransitioning)
             return;
 
+        OpenDifficultyMenu();
+    }
+
+    private void OnDifficultySelected(GameDifficulty difficulty)
+    {
+        if (_isNewGameTransitioning)
+            return;
+
+        GameDifficultyManager.SetDifficulty(difficulty);
+        HideDifficultyMenuRoot();
         _newGameTransitionCoroutine = StartCoroutine(NewGameTransitionRoutine());
     }
 
@@ -110,7 +126,7 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
     /// <summary>Opens the settings panel.</summary>
     public void OnSettings()
     {
-        if (_isNewGameTransitioning)
+        if (_isNewGameTransitioning || IsDifficultyMenuOpen())
             return;
 
         OpenSettingsPanel();
@@ -137,7 +153,7 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
     /// <summary>Quits the application.</summary>
     public void OnQuit()
     {
-        if (_isNewGameTransitioning)
+        if (_isNewGameTransitioning || IsDifficultyMenuOpen())
             return;
 
         PlayClickSound();
@@ -387,6 +403,164 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
         _settingsPanel.SetActive(true);
     }
 
+    private void OpenDifficultyMenu()
+    {
+        PlayClickSound();
+        EnsureDifficultyMenu();
+        HideMainMenuButtonsForDifficulty();
+
+        if (_difficultyMenuRoot != null)
+        {
+            _difficultyMenuRoot.gameObject.SetActive(true);
+            _difficultyMenuRoot.SetAsLastSibling();
+        }
+    }
+
+    private void OnDifficultyBack()
+    {
+        PlayClickSound();
+        HideDifficultyMenuRoot();
+        RestoreDifficultyMenuReplacedObjects();
+    }
+
+    private bool IsDifficultyMenuOpen()
+    {
+        return _difficultyMenuRoot != null && _difficultyMenuRoot.gameObject.activeSelf;
+    }
+
+    private void EnsureDifficultyMenu()
+    {
+        if (_difficultyMenuRoot != null)
+            return;
+
+        Transform existingRoot = transform.Find(DifficultyMenuRootName);
+        if (existingRoot != null)
+        {
+            _difficultyMenuRoot = existingRoot as RectTransform;
+            _menuFont = ResolveDifficultyMenuFont();
+            MenuFontUtility.ApplyFont(_difficultyMenuRoot, _menuFont);
+            return;
+        }
+
+        _menuFont = ResolveDifficultyMenuFont();
+
+        GameObject rootObject = new GameObject(DifficultyMenuRootName, typeof(RectTransform), typeof(CanvasRenderer));
+        rootObject.transform.SetParent(transform, false);
+
+        _difficultyMenuRoot = rootObject.GetComponent<RectTransform>();
+        _difficultyMenuRoot.anchorMin = new Vector2(0.5f, 0.5f);
+        _difficultyMenuRoot.anchorMax = new Vector2(0.5f, 0.5f);
+        _difficultyMenuRoot.pivot = new Vector2(0.5f, 0.5f);
+        _difficultyMenuRoot.sizeDelta = new Vector2(620f, 430f);
+        _difficultyMenuRoot.anchoredPosition = new Vector2(0f, -70f);
+
+        GameObject contentObject = new GameObject("DifficultyContent", typeof(RectTransform), typeof(VerticalLayoutGroup));
+        contentObject.transform.SetParent(_difficultyMenuRoot, false);
+
+        RectTransform contentRect = contentObject.GetComponent<RectTransform>();
+        contentRect.anchorMin = Vector2.zero;
+        contentRect.anchorMax = Vector2.one;
+        contentRect.offsetMin = Vector2.zero;
+        contentRect.offsetMax = Vector2.zero;
+
+        VerticalLayoutGroup layout = contentObject.GetComponent<VerticalLayoutGroup>();
+        layout.spacing = 18f;
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        layout.childControlWidth = false;
+        layout.childControlHeight = false;
+        layout.childForceExpandWidth = false;
+        layout.childForceExpandHeight = false;
+
+        TextMeshProUGUI title = MenuFontUtility.CreateText(
+            "Title",
+            contentObject.transform,
+            "DIFFICULTY",
+            _menuFont,
+            54f,
+            TextAlignmentOptions.Center);
+        SetDifficultyLayoutSize(title.gameObject, 620f, 76f);
+
+        CreateDifficultyButton(contentObject.transform, "EasyButton", "EASY", GameDifficulty.Easy);
+        CreateDifficultyButton(contentObject.transform, "NormalButton", "NORMAL", GameDifficulty.Normal);
+        CreateDifficultyButton(contentObject.transform, "HardButton", "HARD", GameDifficulty.Hard);
+
+        Button backButton = MenuFontUtility.CreateTextButton("BackButton", contentObject.transform, "BACK", _menuFont, new Vector2(360f, 62f));
+        backButton.onClick.AddListener(OnDifficultyBack);
+        SetDifficultyLayoutSize(backButton.gameObject, 360f, 62f);
+
+        MenuButtonHoverEffect.AttachToButtons(_difficultyMenuRoot);
+        _difficultyMenuRoot.gameObject.SetActive(false);
+    }
+
+    private TMP_FontAsset ResolveDifficultyMenuFont()
+    {
+#if UNITY_EDITOR
+        TMP_FontAsset difficultyFont = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(DifficultyMenuFontPath);
+        if (difficultyFont != null)
+            return difficultyFont;
+#endif
+
+        return MenuFontUtility.ResolveMenuFont(transform, _menuFont);
+    }
+
+    private void CreateDifficultyButton(Transform parent, string name, string label, GameDifficulty difficulty)
+    {
+        Button button = MenuFontUtility.CreateTextButton(name, parent, label, _menuFont, new Vector2(420f, 70f));
+        button.onClick.AddListener(() => OnDifficultySelected(difficulty));
+        SetDifficultyLayoutSize(button.gameObject, 420f, 70f);
+    }
+
+    private void SetDifficultyLayoutSize(GameObject target, float width, float height)
+    {
+        RectTransform rectTransform = target.transform as RectTransform;
+        if (rectTransform != null)
+            rectTransform.sizeDelta = new Vector2(width, height);
+
+        LayoutElement layoutElement = target.GetComponent<LayoutElement>();
+        if (layoutElement == null)
+            layoutElement = target.AddComponent<LayoutElement>();
+
+        layoutElement.preferredWidth = width;
+        layoutElement.preferredHeight = height;
+        layoutElement.minWidth = width;
+        layoutElement.minHeight = height;
+    }
+
+    private void HideMainMenuButtonsForDifficulty()
+    {
+        if (_difficultyMenuObjectStates.Count > 0)
+            return;
+
+        Button[] buttons = GetComponentsInChildren<Button>(true);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            Button button = buttons[i];
+            if (button == null || IsDifficultyMenuChild(button.transform) || IsSettingsPanelChild(button.transform))
+                continue;
+
+            _difficultyMenuObjectStates.Add(new MenuObjectState(button.gameObject, button.gameObject.activeSelf));
+            button.gameObject.SetActive(false);
+        }
+    }
+
+    private void HideDifficultyMenuRoot()
+    {
+        if (_difficultyMenuRoot != null)
+            _difficultyMenuRoot.gameObject.SetActive(false);
+    }
+
+    private void RestoreDifficultyMenuReplacedObjects()
+    {
+        for (int i = 0; i < _difficultyMenuObjectStates.Count; i++)
+        {
+            MenuObjectState state = _difficultyMenuObjectStates[i];
+            if (state.GameObject != null)
+                state.GameObject.SetActive(state.WasActive);
+        }
+
+        _difficultyMenuObjectStates.Clear();
+    }
+
     private void ApplyMenuFont()
     {
         _menuFont = MenuFontUtility.ResolveMenuFont(transform, _menuFont);
@@ -474,5 +648,22 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
     private bool IsSettingsPanelChild(Transform candidate)
     {
         return _settingsPanel != null && candidate != null && candidate.IsChildOf(_settingsPanel.transform);
+    }
+
+    private bool IsDifficultyMenuChild(Transform candidate)
+    {
+        return _difficultyMenuRoot != null && candidate != null && candidate.IsChildOf(_difficultyMenuRoot);
+    }
+
+    private readonly struct MenuObjectState
+    {
+        public MenuObjectState(GameObject gameObject, bool wasActive)
+        {
+            GameObject = gameObject;
+            WasActive = wasActive;
+        }
+
+        public GameObject GameObject { get; }
+        public bool WasActive { get; }
     }
 }

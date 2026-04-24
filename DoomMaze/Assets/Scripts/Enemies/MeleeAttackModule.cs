@@ -14,6 +14,9 @@ public interface IAttackModule
     void Tick();
 }
 
+/// <summary>Implemented by attack modules that trigger their own attack animations.</summary>
+public interface IManualAttackAnimationModule { }
+
 /// <summary>
 /// Melee attack module that validates reach against the cached player collider.
 /// This avoids false negatives from the grunt's own colliders filling overlap queries.

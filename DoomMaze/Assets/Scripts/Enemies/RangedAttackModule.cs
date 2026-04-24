@@ -4,8 +4,9 @@ using UnityEngine;
 /// Ranged attack module that spawns a simple projectile toward the player at
 /// intervals defined by <see cref="EnemyData.AttackRate"/>.
 /// </summary>
-public class RangedAttackModule : MonoBehaviour, IAttackModule
+public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule
 {
+    [SerializeField] private Transform _muzzlePoint;
     [SerializeField] private Vector3 _muzzleOffset = new Vector3(0f, 0.95f, 0.55f);
     [SerializeField] private float _projectileSpeed = 16f;
     [SerializeField] private float _projectileRadius = 0.22f;
@@ -20,6 +21,9 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
         _enemyBase = GetComponent<EnemyBase>();
         if (_enemyBase == null)
             Debug.LogError("[RangedAttackModule] EnemyBase not found on this GameObject.");
+
+        if (_muzzlePoint == null)
+            _muzzlePoint = FindMuzzlePoint();
     }
 
     private void Start()
@@ -64,7 +68,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
         if (_playerTransform == null)
             return;
 
-        Vector3 origin = transform.TransformPoint(_muzzleOffset);
+        Vector3 origin = GetMuzzlePosition();
         Vector3 targetPosition = _playerTransform.position + Vector3.up;
         Vector3 direction = targetPosition - origin;
 
@@ -84,6 +88,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
             _projectileRadius
         );
 
+        _enemyBase?.PlayAttackAnimationOneShot();
         AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
     }
 
@@ -96,6 +101,23 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
             Debug.LogWarning("[RangedAttackModule] Player transform not cached on EnemyBase.");
     }
 
+    private Vector3 GetMuzzlePosition()
+    {
+        return _muzzlePoint != null ? _muzzlePoint.position : transform.TransformPoint(_muzzleOffset);
+    }
+
+    private Transform FindMuzzlePoint()
+    {
+        Transform[] children = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < children.Length; i++)
+        {
+            if (children[i] != transform && children[i].name == "Muzzle")
+                return children[i];
+        }
+
+        return null;
+    }
+
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
@@ -103,7 +125,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
             return;
 
         UnityEditor.Handles.color = new Color(1f, 0.6f, 0f, 0.6f);
-        UnityEditor.Handles.DrawLine(transform.TransformPoint(_muzzleOffset), _playerTransform.position + Vector3.up);
+        UnityEditor.Handles.DrawLine(GetMuzzlePosition(), _playerTransform.position + Vector3.up);
     }
 #endif
 }

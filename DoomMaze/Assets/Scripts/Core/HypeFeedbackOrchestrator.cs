@@ -58,6 +58,7 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         EventBus<PlayerDamagedEvent>.Subscribe(OnPlayerDamaged);
         EventBus<MeleeHitEvent>.Subscribe(OnMeleeHit);
         EventBus<PauseChangedEvent>.Subscribe(OnPauseChanged);
+        EventBus<PlayerDecayChangedEvent>.Subscribe(OnPlayerDecayChanged);
     }
 
     private void OnDisable()
@@ -70,6 +71,7 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
         EventBus<PlayerDamagedEvent>.Unsubscribe(OnPlayerDamaged);
         EventBus<MeleeHitEvent>.Unsubscribe(OnMeleeHit);
         EventBus<PauseChangedEvent>.Unsubscribe(OnPauseChanged);
+        EventBus<PlayerDecayChangedEvent>.Unsubscribe(OnPlayerDecayChanged);
 
         if (_meleeHitStopRoutine != null)
         {
@@ -165,6 +167,11 @@ public class HypeFeedbackOrchestrator : MonoBehaviour
     {
         if (_streakCount > 0)
             ResetStreak();
+    }
+
+    private void OnPlayerDecayChanged(PlayerDecayChangedEvent e)
+    {
+        VolumeController?.SetDecayGrayscale(e.GrayscaleAmount);
     }
 
     private void OnMeleeHit(MeleeHitEvent e)

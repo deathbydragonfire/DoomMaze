@@ -16,6 +16,10 @@ public class AudioManager : MonoBehaviour
     [SerializeField] private AudioMixerGroup _musicGroup;
     [SerializeField] private AudioMixerGroup _uiGroup;
     [SerializeField] private AudioMixerGroup _gameplayGroup;
+    [Header("Decay Ducking")]
+    [SerializeField] [Range(0f, 1f)] private float _decayMusicDuckTarget = 0.18f;
+    [SerializeField] [Range(0f, 1f)] private float _decayGameplayDuckTarget = 0.25f;
+    [SerializeField] [Range(0f, 1f)] private float _decayUiDuckTarget = 0.45f;
 
     private const string MASTER_VOLUME_PARAM = "MasterVolume";
     private const string MUSIC_VOLUME_PARAM  = "MusicVolume";
@@ -24,6 +28,12 @@ public class AudioManager : MonoBehaviour
     private const string LEGACY_UI_VOLUME_PARAM = "MyExposedParam";
     private const string LEGACY_SFX_VOLUME_PARAM = "SFXVolume";
     private const string LEGACY_SFX_VOLUME_PARAM_ALT = "SfxVolume";
+
+    private float _masterVolume = 1f;
+    private float _musicVolume = 1f;
+    private float _uiVolume = 1f;
+    private float _gameplayVolume = 1f;
+    private float _decayDuckIntensity;
 
     private void Awake()
     {
@@ -104,25 +114,29 @@ public class AudioManager : MonoBehaviour
     /// <summary>Sets Master mixer volume. Value is 0–1, converted to dB internally.</summary>
     public void SetMasterVolume(float normalizedVolume)
     {
-        SetMixerVolume(normalizedVolume, MASTER_VOLUME_PARAM);
+        _masterVolume = Mathf.Clamp01(normalizedVolume);
+        ApplyMixerVolumes();
     }
 
     /// <summary>Sets Music mixer volume.</summary>
     public void SetMusicVolume(float normalizedVolume)
     {
-        SetMixerVolume(normalizedVolume, MUSIC_VOLUME_PARAM);
+        _musicVolume = Mathf.Clamp01(normalizedVolume);
+        ApplyMixerVolumes();
     }
 
     /// <summary>Sets UI mixer volume.</summary>
     public void SetUiVolume(float normalizedVolume)
     {
-        SetMixerVolume(normalizedVolume, UI_VOLUME_PARAM, LEGACY_UI_VOLUME_PARAM);
+        _uiVolume = Mathf.Clamp01(normalizedVolume);
+        ApplyMixerVolumes();
     }
 
     /// <summary>Sets gameplay mixer volume.</summary>
     public void SetGameplayVolume(float normalizedVolume)
     {
-        SetMixerVolume(normalizedVolume, GAMEPLAY_VOLUME_PARAM, LEGACY_SFX_VOLUME_PARAM, LEGACY_SFX_VOLUME_PARAM_ALT);
+        _gameplayVolume = Mathf.Clamp01(normalizedVolume);
+        ApplyMixerVolumes();
     }
 
     /// <summary>Compatibility wrapper for older gameplay SFX callers.</summary>
@@ -146,6 +160,22 @@ public class AudioManager : MonoBehaviour
         AssignOutputGroup(source, GetGameplayGroup());
     }
 
+    public void ConfigureDecaySource(AudioSource source)
+    {
+        if (source != null)
+            source.outputAudioMixerGroup = null;
+    }
+
+    public void SetDecayDuckIntensity(float intensity)
+    {
+        float clamped = Mathf.Clamp01(intensity);
+        if (Mathf.Approximately(_decayDuckIntensity, clamped))
+            return;
+
+        _decayDuckIntensity = clamped;
+        ApplyMixerVolumes();
+    }
+
     // ── Private ───────────────────────────────────────────────────────────────
 
     private void ApplyAudioSettings()
@@ -153,10 +183,28 @@ public class AudioManager : MonoBehaviour
         if (SaveManager.Instance == null) return;
 
         SettingsData settings = SaveManager.Instance.CurrentSettings;
-        SetMasterVolume(settings.MasterVolume);
-        SetMusicVolume(settings.MusicVolume);
-        SetUiVolume(settings.UiVolume);
-        SetGameplayVolume(settings.GameplayVolume);
+        _masterVolume = Mathf.Clamp01(settings.MasterVolume);
+        _musicVolume = Mathf.Clamp01(settings.MusicVolume);
+        _uiVolume = Mathf.Clamp01(settings.UiVolume);
+        _gameplayVolume = Mathf.Clamp01(settings.GameplayVolume);
+        ApplyMixerVolumes();
+    }
+
+    private void ApplyMixerVolumes()
+    {
+        SetMixerVolume(_masterVolume, MASTER_VOLUME_PARAM);
+        SetMixerVolume(GetDuckedVolume(_musicVolume, _decayMusicDuckTarget), MUSIC_VOLUME_PARAM);
+        SetMixerVolume(GetDuckedVolume(_uiVolume, _decayUiDuckTarget), UI_VOLUME_PARAM, LEGACY_UI_VOLUME_PARAM);
+        SetMixerVolume(
+            GetDuckedVolume(_gameplayVolume, _decayGameplayDuckTarget),
+            GAMEPLAY_VOLUME_PARAM,
+            LEGACY_SFX_VOLUME_PARAM,
+            LEGACY_SFX_VOLUME_PARAM_ALT);
+    }
+
+    private float GetDuckedVolume(float baseVolume, float duckTarget)
+    {
+        return Mathf.Lerp(baseVolume, baseVolume * Mathf.Clamp01(duckTarget), _decayDuckIntensity);
     }
 
     private static float NormalizedToDb(float value)

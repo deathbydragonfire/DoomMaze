@@ -30,6 +30,8 @@ public class UpgradeRoomController : MonoBehaviour
     private bool _isMusicOverrideActive;
     private UpgradeRoomMusicTrigger _musicTrigger;
 
+    public static bool IsPlayerInAnyUpgradeRoom => _upgradeFogOwner != null;
+
     private void Start()
     {
         ConfigureRoom();
@@ -40,7 +42,12 @@ public class UpgradeRoomController : MonoBehaviour
         if (_upgradeFogOwner == this)
         {
             _upgradeFogOwner = null;
+            SetPlayerPresence(false);
             EnemyRoomController.RequestFogColor(this, _outsideFogColor, _fogCrossfadeDuration);
+        }
+        else if (_isPlayerInRoom)
+        {
+            SetPlayerPresence(false);
         }
 
         if (_isMusicOverrideActive)
@@ -67,7 +74,6 @@ public class UpgradeRoomController : MonoBehaviour
         bool playerInRoom = _playerTransform != null && IsPlayerStandingOnThisRoom(_playerTransform.position);
         if (playerInRoom)
         {
-            _isPlayerInRoom = true;
             SetUpgradeFogOwner(this);
             PlayUpgradeRoomMusic();
             return;
@@ -76,7 +82,7 @@ public class UpgradeRoomController : MonoBehaviour
         if (!_isPlayerInRoom && _upgradeFogOwner != this)
             return;
 
-        _isPlayerInRoom = false;
+        SetPlayerPresence(false);
         if (_upgradeFogOwner == this)
         {
             _upgradeFogOwner = null;
@@ -179,9 +185,25 @@ public class UpgradeRoomController : MonoBehaviour
         if (owner == null)
             return;
 
+        if (_upgradeFogOwner != null && _upgradeFogOwner != owner)
+            _upgradeFogOwner.SetPlayerPresence(false);
+
         _upgradeFogOwner = owner;
-        owner._isPlayerInRoom = true;
+        owner.SetPlayerPresence(true);
         EnemyRoomController.RequestFogColor(owner, owner._upgradeFogColor, owner._fogCrossfadeDuration);
+    }
+
+    private void SetPlayerPresence(bool isInRoom)
+    {
+        if (_isPlayerInRoom == isInRoom)
+            return;
+
+        _isPlayerInRoom = isInRoom;
+        EventBus<UpgradeRoomPresenceChangedEvent>.Raise(new UpgradeRoomPresenceChangedEvent
+        {
+            Room = this,
+            IsPlayerInside = isInRoom
+        });
     }
 
     private void PlayUpgradeRoomMusic()

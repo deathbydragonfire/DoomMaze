@@ -18,6 +18,10 @@ public class EnemyBase : MonoBehaviour
     private const string EnemyTagName = "Enemy";
     private const float FallbackHitboxRadius = 0.5f;
     private const float FallbackHitboxHeight = 1.8f;
+    private const float HitboxRadiusMultiplier = 1.75f;
+    private const float HitboxHeightMultiplier = 1.35f;
+    private const float MinimumHitboxRadius = 0.65f;
+    private const float MinimumHitboxHeight = 2.4f;
     private const float NavMeshSpawnSampleDistance = 4f;
     private const float StuckRecoveryDelay = 1.25f;
     private const float StuckMoveThresholdSqr = 0.0004f;
@@ -159,6 +163,14 @@ public class EnemyBase : MonoBehaviour
             return;
 
         _externalVelocity += horizontalImpulse;
+    }
+
+    public void PlayAttackAnimationOneShot()
+    {
+        if (_billboard == null || _data == null)
+            return;
+
+        _billboard.SetAnimationOneShot(_data.AttackSprites, RestorePostAttackAnimation);
     }
 
     private void TickStateMachine()
@@ -350,7 +362,10 @@ public class EnemyBase : MonoBehaviour
                 StopAgent();
                 _attackModule?.OnAttackEnter();
                 _isShowingWalkAnimation = false;
-                _billboard?.SetAnimation(_data?.AttackSprites);
+                if (_attackModule is IManualAttackAnimationModule)
+                    _billboard?.SetAnimation(_data?.IdleSprites);
+                else
+                    _billboard?.SetAnimation(_data?.AttackSprites);
                 break;
 
             case EnemyState.Hurt:
@@ -428,6 +443,15 @@ public class EnemyBase : MonoBehaviour
         SetDeathCollisionEnabled(true);
 
         CurrentState = EnemyState.Idle;
+        _billboard?.SetAnimation(_data?.IdleSprites);
+    }
+
+    private void RestorePostAttackAnimation()
+    {
+        if (CurrentState != EnemyState.Attack || !IsAlive)
+            return;
+
+        _isShowingWalkAnimation = false;
         _billboard?.SetAnimation(_data?.IdleSprites);
     }
 
@@ -644,10 +668,10 @@ public class EnemyBase : MonoBehaviour
     {
         CapsuleCollider[] rootCapsules = GetComponents<CapsuleCollider>();
         float hitboxRadius = _data != null && _data.AgentRadius > 0f
-            ? Mathf.Max(0.3f, _data.AgentRadius * 1.15f)
+            ? Mathf.Max(MinimumHitboxRadius, _data.AgentRadius * HitboxRadiusMultiplier)
             : FallbackHitboxRadius;
         float hitboxHeight = _data != null && _data.AgentHeight > 0f
-            ? Mathf.Max(1f, _data.AgentHeight)
+            ? Mathf.Max(MinimumHitboxHeight, _data.AgentHeight * HitboxHeightMultiplier)
             : FallbackHitboxHeight;
         Vector3 hitboxCenter = new(0f, hitboxHeight * 0.5f, 0f);
 
