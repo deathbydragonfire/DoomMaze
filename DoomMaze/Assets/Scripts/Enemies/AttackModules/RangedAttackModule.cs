@@ -2,18 +2,40 @@ using UnityEngine;
 
 /// <summary>
 /// Ranged attack module that spawns a simple projectile toward the player at
-/// intervals defined by <see cref="EnemyData.AttackRate"/>.
+/// intervals defined by <see cref="AttackRate"/>.
 /// </summary>
 public class RangedAttackModule : MonoBehaviour, IAttackModule
 {
+    [SerializeField] protected float _attackRange = 12;
+    [SerializeField] protected float _attackDamage = 10;
+    [SerializeField] protected float _attackRate = 2;
+    [SerializeField] protected DamageType _attackDamageType = DamageType.Physical;
     [SerializeField] private Vector3 _muzzleOffset = new Vector3(0f, 0.95f, 0.55f);
     [SerializeField] private float _projectileSpeed = 16f;
     [SerializeField] private float _projectileRadius = 0.22f;
+
+    // ── IAttackModule ───────────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public float AttackRange => _attackRange;
+
+    /// <inheritdoc/>
+    public float AttackDamage => _attackDamage;
+
+    /// <inheritdoc/>
+    public float AttackRate => _attackRate;
+
+    /// <inheritdoc/>
+    public DamageType AttackDamageType => _attackDamageType;
+
+    // ── Cached refs ───────────────────────────────────────────────────────────────
 
     private EnemyData _data;
     private EnemyBase _enemyBase;
     private Transform _playerTransform;
     private float _attackTimer;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void Awake()
     {
@@ -34,6 +56,8 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
         CachePlayerReference(logWarnings: true);
     }
 
+    // ── IAttackModule implementation ────────────────────────────────────────────────
+
     /// <inheritdoc/>
     public void OnAttackEnter()
     {
@@ -53,7 +77,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
         if (_attackTimer <= 0f)
         {
             FireProjectile();
-            _attackTimer = 1f / _data.AttackRate;
+            _attackTimer = 1f / AttackRate;
         }
     }
 
@@ -77,9 +101,9 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule
             gameObject,
             origin,
             direction.normalized,
-            _data.AttackDamage,
-            _data.AttackDamageType,
-            _data.AttackRange,
+            AttackDamage,
+            AttackDamageType,
+            AttackRange,
             _projectileSpeed,
             _projectileRadius
         );
