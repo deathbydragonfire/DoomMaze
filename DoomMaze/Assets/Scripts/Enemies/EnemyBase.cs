@@ -18,6 +18,9 @@ public class EnemyBase : MonoBehaviour
     private const string EnemyTagName = "Enemy";
     private const float FallbackHitboxRadius = 0.5f;
     private const float FallbackHitboxHeight = 1.8f;
+    private const float NavMeshSpawnSampleDistance = 4f;
+    private const float StuckRecoveryDelay = 1.25f;
+    private const float StuckMoveThresholdSqr = 0.0004f;
 
     [SerializeField] private EnemyData _data;
     [SerializeField] private float _knockbackDecay = 18f;
@@ -45,6 +48,9 @@ public class EnemyBase : MonoBehaviour
     private float _hurtTimer;
     private float _distanceToPlayer;
     private Vector3 _externalVelocity;
+    private Vector3 _lastStuckCheckPosition;
+    private float _stuckTimer;
+    private bool _isShowingWalkAnimation;
     private int _lineOfSightMask;
 
     private void Awake()
@@ -72,11 +78,10 @@ public class EnemyBase : MonoBehaviour
 
     private void OnEnable()
     {
-        if (_deathCollisionColliders == null)
+        if (_agent == null || _healthComponent == null)
             return;
 
-        if (_healthComponent == null || _healthComponent.IsAlive)
-            SetDeathCollisionEnabled(true);
+        ResetForSpawn();
     }
 
     private void Start()
@@ -90,13 +95,7 @@ public class EnemyBase : MonoBehaviour
         _healthComponent.OnDied += OnDeath;
         _healthComponent.OnDamaged += OnHurt;
 
-        if (_data != null)
-        {
-            _agent.speed = _data.MoveSpeed;
-            _agent.stoppingDistance = _data.StoppingDistance;
-            _agent.radius = _data.AgentRadius;
-            _agent.height = _data.AgentHeight;
-        }
+        ConfigureAgentFromData();
 
         _billboard?.Initialize(_data);
         CacheDeathCollisionColliders();
@@ -119,6 +118,7 @@ public class EnemyBase : MonoBehaviour
             return;
 
         TickStateMachine();
+        RecoverIfStuck();
         ApplyExternalVelocity();
     }
 
@@ -142,8 +142,9 @@ public class EnemyBase : MonoBehaviour
 
         IsGrappled = false;
         CurrentState = EnemyState.Hurt;
-        _agent.isStopped = true;
+        StopAgent();
         _hurtTimer = duration;
+        _isShowingWalkAnimation = false;
         _billboard?.SetAnimation(_data?.HurtSprites, loop: false);
         AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
     }
@@ -196,7 +197,7 @@ public class EnemyBase : MonoBehaviour
 
         if (CurrentState == EnemyState.Attack)
         {
-            _agent.isStopped = true;
+            StopAgent();
 
             if (!canAttackPlayer)
             {
@@ -222,7 +223,7 @@ public class EnemyBase : MonoBehaviour
                 if (CurrentState != EnemyState.Chase)
                     SetState(EnemyState.Alert);
                 else
-                    _agent.SetDestination(PlayerTransform.position);
+                    SetChaseDestination(PlayerTransform.position);
 
                 return;
             }
@@ -327,42 +328,44 @@ public class EnemyBase : MonoBehaviour
         switch (next)
         {
             case EnemyState.Idle:
-                _agent.isStopped = true;
-                _agent.ResetPath();
+                StopAgent(resetPath: true);
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.IdleSprites);
                 break;
 
             case EnemyState.Alert:
-                _agent.isStopped = true;
+                StopAgent();
                 _alertTimer = AlertDwellTime;
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.IdleSprites);
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
 
             case EnemyState.Chase:
-                _agent.isStopped = false;
                 if (PlayerTransform != null)
-                    _agent.SetDestination(PlayerTransform.position);
-                _billboard?.SetAnimation(_data?.WalkSprites);
+                    SetChaseDestination(PlayerTransform.position);
                 break;
 
             case EnemyState.Attack:
-                _agent.isStopped = true;
+                StopAgent();
                 _attackModule?.OnAttackEnter();
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.AttackSprites);
                 break;
 
             case EnemyState.Hurt:
-                _agent.isStopped = true;
+                StopAgent();
                 _hurtTimer = HurtRecoveryTime;
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.HurtSprites, loop: false);
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
                 break;
 
             case EnemyState.Dead:
-                _agent.isStopped = true;
+                StopAgent();
                 _agent.enabled = false;
                 SetDeathCollisionEnabled(false);
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimationOneShot(_data?.DeathSprites, OnDeathAnimationComplete);
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetDeathClip() : null, _data != null ? _data.DeathVolume : 1f);
                 break;
@@ -406,6 +409,157 @@ public class EnemyBase : MonoBehaviour
         gameObject.SetActive(false);
     }
 
+    private void ResetForSpawn()
+    {
+        IsGrappled = false;
+        _alertTimer = 0f;
+        _hurtTimer = 0f;
+        _stuckTimer = 0f;
+        _isShowingWalkAnimation = false;
+        _externalVelocity = Vector3.zero;
+        _lastStuckCheckPosition = transform.position;
+
+        RemoveGrappledStates();
+        _healthComponent.ResetHealth();
+        ConfigureAgentFromData();
+
+        TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance);
+        StopAgent(resetPath: true);
+        SetDeathCollisionEnabled(true);
+
+        CurrentState = EnemyState.Idle;
+        _billboard?.SetAnimation(_data?.IdleSprites);
+    }
+
+    private void ConfigureAgentFromData()
+    {
+        if (_agent == null || _data == null)
+            return;
+
+        _agent.speed = _data.MoveSpeed;
+        _agent.stoppingDistance = _data.StoppingDistance;
+        _agent.radius = _data.AgentRadius;
+        _agent.height = _data.AgentHeight;
+    }
+
+    private void RemoveGrappledStates()
+    {
+        GrappledState[] grappledStates = GetComponents<GrappledState>();
+        for (int i = 0; i < grappledStates.Length; i++)
+        {
+            if (grappledStates[i] != null)
+                Destroy(grappledStates[i]);
+        }
+    }
+
+    private void StopAgent(bool resetPath = false)
+    {
+        if (_agent == null || !_agent.enabled)
+            return;
+
+        if (!_agent.isOnNavMesh)
+            return;
+
+        _agent.isStopped = true;
+
+        if (resetPath && _agent.isOnNavMesh)
+            _agent.ResetPath();
+    }
+
+    private bool TrySetAgentDestination(Vector3 destination)
+    {
+        if (_agent == null)
+            return false;
+
+        if ((!_agent.enabled || !_agent.isOnNavMesh) && !TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance))
+            return false;
+
+        _agent.isStopped = false;
+        return _agent.SetDestination(destination);
+    }
+
+    private void SetChaseDestination(Vector3 destination)
+    {
+        if (TrySetAgentDestination(destination))
+        {
+            if (!_isShowingWalkAnimation)
+            {
+                _isShowingWalkAnimation = true;
+                _billboard?.SetAnimation(_data?.WalkSprites);
+            }
+        }
+        else
+        {
+            if (_isShowingWalkAnimation)
+            {
+                _isShowingWalkAnimation = false;
+                _billboard?.SetAnimation(_data?.IdleSprites);
+            }
+        }
+    }
+
+    private bool TryPlaceAgentOnNavMesh(float sampleDistance)
+    {
+        if (_agent == null)
+            return false;
+
+        if (_agent.enabled && _agent.isOnNavMesh)
+            return true;
+
+        if (!NavMesh.SamplePosition(transform.position, out NavMeshHit hit, sampleDistance, NavMesh.AllAreas))
+            return false;
+
+        if (_agent.enabled)
+            _agent.enabled = false;
+
+        transform.position = hit.position;
+        _agent.enabled = true;
+
+        return _agent.enabled && _agent.isOnNavMesh;
+    }
+
+    private void RecoverIfStuck()
+    {
+        if (CurrentState != EnemyState.Chase || PlayerTransform == null || _agent == null || !_agent.enabled)
+        {
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        if (!_agent.isOnNavMesh)
+        {
+            TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance);
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        if (_agent.pathPending || _agent.remainingDistance <= _agent.stoppingDistance + 0.2f)
+        {
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        float movedSqr = (transform.position - _lastStuckCheckPosition).sqrMagnitude;
+        if (movedSqr > StuckMoveThresholdSqr || _agent.velocity.sqrMagnitude > 0.01f)
+        {
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        _stuckTimer += Time.deltaTime;
+        if (_stuckTimer < StuckRecoveryDelay)
+            return;
+
+        TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance);
+        TrySetAgentDestination(PlayerTransform.position);
+        _stuckTimer = 0f;
+        _lastStuckCheckPosition = transform.position;
+    }
+
     private void ApplyExternalVelocity()
     {
         if (_externalVelocity.sqrMagnitude <= 0.0001f)
@@ -414,7 +568,7 @@ public class EnemyBase : MonoBehaviour
             return;
         }
 
-        if (_agent != null && _agent.enabled)
+        if (_agent != null && _agent.enabled && _agent.isOnNavMesh)
             _agent.Move(_externalVelocity * Time.deltaTime);
 
         float decay = _knockbackDecay > 0f ? _knockbackDecay : 18f;

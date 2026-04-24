@@ -142,9 +142,10 @@ public class HealthComponent : MonoBehaviour, IDamageable
     /// <summary>Resets HP and alive state back to full.</summary>
     public void ResetHealth()
     {
-        CurrentHealth = _maxHealth;
-        IsAlive       = true;
-        _wasLowHealth = false;
+        CurrentHealth    = _maxHealth;
+        IsAlive          = true;
+        IsInvulnerable   = false;
+        _wasLowHealth    = false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
