@@ -31,5 +31,6 @@ public enum TutorialTriggerType
     Checkpoint,
     FailRespawn,
     CombatAndHudUnlock,
+    EnemyAndSuperActivation,
     FogZone
 }

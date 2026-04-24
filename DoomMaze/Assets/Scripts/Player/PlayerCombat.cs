@@ -285,6 +285,12 @@ public class PlayerCombat : MonoBehaviour
         RaiseSuperMeterChanged();
     }
 
+    public void FillSuperMeter()
+    {
+        _superKillCharge = GetKillsRequiredForSuper();
+        RaiseSuperMeterChanged();
+    }
+
     private void TryUseSuper()
     {
         if (!_isCombatEnabled || !IsSuperReady || _isUsingSuper)

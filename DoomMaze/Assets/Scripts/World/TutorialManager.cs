@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 public class TutorialManager : MonoBehaviour
@@ -23,6 +24,7 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private CheckpointDefinition[] _checkpoints;
     [SerializeField] private Collider[] _failTriggers;
     [SerializeField] private Collider _combatAndHudUnlockTrigger;
+    [SerializeField] private Collider _enemyAndSuperActivationTrigger;
     [SerializeField] private Collider _fogTrigger;
 
     [Header("Scene References")]
@@ -32,9 +34,25 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private CharacterController _playerCharacterController;
     [SerializeField] private Transform _initialRespawnAnchor;
 
+    [Header("Scene Start Audio")]
+    [SerializeField] private AudioClip _sceneStartSound;
+    [Range(0f, 1f)] [SerializeField] private float _sceneStartSoundVolume = 1f;
+
+    [Header("Enemy And Super Activation")]
+    [SerializeField] private GameObject[] _enemyAndSuperActivationEnemies;
+    [SerializeField] private AudioClip _enemyAndSuperActivationSound;
+    [Range(0f, 1f)] [SerializeField] private float _enemyAndSuperActivationSoundVolume = 1f;
+    [SerializeField] private Image _enemyAndSuperActivationTintOverlay;
+    [SerializeField] private Color _enemyAndSuperActivationTintColor = new Color(1f, 0f, 0f, 0.35f);
+    [SerializeField] private float _enemyAndSuperActivationTintFadeInDuration = 0.08f;
+    [SerializeField] private float _enemyAndSuperActivationTintFadeOutDuration = 0.35f;
+    [SerializeField] private TMP_Text _enemyAndSuperActivationCompleteText;
+    [SerializeField] private float _enemyAndSuperActivationCompleteTextFadeInDuration = 0.5f;
+
     [Header("Checkpoint Feedback")]
     [SerializeField] private AudioClip[] _checkpointSounds;
     [Range(0f, 1f)] [SerializeField] private float _checkpointSoundVolume = 1f;
+    [SerializeField] private Renderer _combatAndHudUnlockGlowRenderer;
     [ColorUsage(true, true)] [SerializeField] private Color _checkpointGlowColor = new Color(0.2f, 2f, 0.2f, 1f);
     [SerializeField] private float _checkpointGlowDuration = 0.7f;
     [SerializeField] private float _checkpointEmissionIntensity = 8f;
@@ -51,6 +69,15 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private float _fogDensitySmoothingSpeed = 2.5f;
     [SerializeField] private float _fogPointReachedRadius = 2f;
 
+    [Header("Tutorial Music")]
+    [SerializeField] private AudioSource _tutorialMusicSource;
+    [SerializeField] private AudioClip _tutorialMusicTrack;
+    [Range(0f, 1f)] [SerializeField] private float _tutorialMusicVolume = 1f;
+    [SerializeField] private float _tutorialMusicStartDelay = 2f;
+    [SerializeField] private float _tutorialMusicFadeInDuration = 2f;
+    [FormerlySerializedAs("_normalMusicFadeOutDuration")]
+    [SerializeField] private float _tutorialMusicFadeOutDuration = 1f;
+
     [Header("Fog Audio")]
     [SerializeField] private AudioClip _fogPointLoop;
     [Range(0f, 1f)] [SerializeField] private float _fogPointVolume = 1f;
@@ -59,7 +86,6 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private float _fogPointMaxDistance = 20f;
     [SerializeField] private AudioClip _fogMusicTrack;
     [Range(0f, 1f)] [SerializeField] private float _fogMusicVolume = 1f;
-    [SerializeField] private float _normalMusicFadeOutDuration = 1f;
     [SerializeField] private float _fogMusicFadeInDuration = 1f;
 
     [Header("Tutorial Transition UI")]
@@ -86,8 +112,13 @@ public class TutorialManager : MonoBehaviour
     private Coroutine[] _glowRoutines;
     private RespawnPoint _initialRespawnPoint;
     private FogSettings _originalFogSettings;
+    private AudioSource _sceneStartSource;
     private AudioSource _fogPointSource;
     private AudioSource _fogMusicSource;
+    private Coroutine _combatAndHudUnlockGlowRoutine;
+    private Coroutine _enemyAndSuperActivationTintRoutine;
+    private Coroutine _enemyAndSuperActivationCompleteTextRoutine;
+    private Coroutine _tutorialMusicRoutine;
     private Coroutine _fogMusicRoutine;
     private Coroutine _fogMusicStopRoutine;
     private Coroutine _sceneFadeRoutine;
@@ -97,9 +128,14 @@ public class TutorialManager : MonoBehaviour
     private bool _isFogZoneActive;
     private bool _hasReachedFogPoint;
     private bool _hasStartedFogAudio;
+    private bool _hasStartedTutorialMusic;
+    private bool _hasActivatedEnemyAndSuperTrigger;
+    private bool _hasShownEnemyAndSuperActivationCompleteText;
     private bool _isLoadingGameplay;
     private bool _hasCachedMusicMixerVolume;
     private float _cachedMusicMixerVolume = 1f;
+    private float _enemyAndSuperActivationCompleteTextTargetAlpha = 1f;
+    private bool[] _enemyAndSuperActivationEnemyEliminated;
 
     private void Awake()
     {
@@ -108,6 +144,7 @@ public class TutorialManager : MonoBehaviour
         ConfigureRelays();
         CaptureInitialRespawnPoint();
         ApplyInitialGateState();
+        ApplyInitialEnemyAndSuperActivationState();
         EnsureTransitionUi();
         PrimeSceneFadeOverlay();
 
@@ -118,7 +155,14 @@ public class TutorialManager : MonoBehaviour
     private IEnumerator Start()
     {
         yield return null;
+        PlaySceneStartSound();
+        PlayTutorialMusic(true);
         BeginSceneFadeIn();
+    }
+
+    private void OnEnable()
+    {
+        EventBus<EnemyDiedEvent>.Subscribe(OnEnemyDied);
     }
 
     private void Update()
@@ -128,17 +172,23 @@ public class TutorialManager : MonoBehaviour
 
     private void OnDisable()
     {
+        EventBus<EnemyDiedEvent>.Unsubscribe(OnEnemyDied);
+
         if (!_isLoadingGameplay)
             RestoreOriginalFogSettings();
 
+        StopTutorialMusicImmediate();
         RestoreMusicMixerVolume();
     }
 
     private void OnDestroy()
     {
+        EventBus<EnemyDiedEvent>.Unsubscribe(OnEnemyDied);
+
         if (!_isLoadingGameplay)
             RestoreOriginalFogSettings();
 
+        StopTutorialMusicImmediate();
         RestoreMusicMixerVolume();
     }
 
@@ -159,6 +209,10 @@ public class TutorialManager : MonoBehaviour
 
             case TutorialTriggerType.CombatAndHudUnlock:
                 UnlockCombatAndHud();
+                break;
+
+            case TutorialTriggerType.EnemyAndSuperActivation:
+                ActivateEnemiesAndFillSuper();
                 break;
 
             case TutorialTriggerType.FogZone:
@@ -215,6 +269,7 @@ public class TutorialManager : MonoBehaviour
         }
 
         ConfigureRelay(_combatAndHudUnlockTrigger, TutorialTriggerType.CombatAndHudUnlock, -1);
+        ConfigureRelay(_enemyAndSuperActivationTrigger, TutorialTriggerType.EnemyAndSuperActivation, -1);
         ConfigureRelay(_fogTrigger, TutorialTriggerType.FogZone, -1);
     }
 
@@ -262,6 +317,70 @@ public class TutorialManager : MonoBehaviour
         _isCombatAndHudUnlocked = false;
     }
 
+    private void ApplyInitialEnemyAndSuperActivationState()
+    {
+        int enemyCount = _enemyAndSuperActivationEnemies != null ? _enemyAndSuperActivationEnemies.Length : 0;
+        _enemyAndSuperActivationEnemyEliminated = new bool[enemyCount];
+
+        if (_enemyAndSuperActivationEnemies == null)
+        {
+            HideEnemyAndSuperActivationCompleteText();
+            return;
+        }
+
+        for (int i = 0; i < _enemyAndSuperActivationEnemies.Length; i++)
+        {
+            if (_enemyAndSuperActivationEnemies[i] != null)
+                _enemyAndSuperActivationEnemies[i].SetActive(false);
+        }
+
+        HideEnemyAndSuperActivationCompleteText();
+    }
+
+    private void HideEnemyAndSuperActivationCompleteText()
+    {
+        if (_enemyAndSuperActivationCompleteText == null)
+            return;
+
+        _enemyAndSuperActivationCompleteTextTargetAlpha = Mathf.Clamp01(_enemyAndSuperActivationCompleteText.color.a);
+        if (_enemyAndSuperActivationCompleteTextTargetAlpha <= 0f)
+            _enemyAndSuperActivationCompleteTextTargetAlpha = 1f;
+
+        SetEnemyAndSuperActivationCompleteTextAlpha(0f);
+        _enemyAndSuperActivationCompleteText.gameObject.SetActive(false);
+    }
+
+    private void PlaySceneStartSound()
+    {
+        if (_sceneStartSound == null)
+            return;
+
+        if (AudioManager.Instance != null)
+        {
+            AudioManager.Instance.PlaySfx(_sceneStartSound, _sceneStartSoundVolume);
+            return;
+        }
+
+        AudioSource source = EnsureSceneStartSource();
+        source.PlayOneShot(_sceneStartSound, Mathf.Clamp01(_sceneStartSoundVolume));
+    }
+
+    private AudioSource EnsureSceneStartSource()
+    {
+        if (_sceneStartSource != null)
+            return _sceneStartSource;
+
+        GameObject sourceObject = new GameObject("TutorialSceneStartSource");
+        sourceObject.transform.SetParent(transform, false);
+
+        _sceneStartSource = sourceObject.AddComponent<AudioSource>();
+        _sceneStartSource.playOnAwake = false;
+        _sceneStartSource.loop = false;
+        _sceneStartSource.spatialBlend = 0f;
+        _sceneStartSource.ignoreListenerPause = true;
+        return _sceneStartSource;
+    }
+
     private void ActivateCheckpoint(int checkpointIndex)
     {
         if (_checkpoints == null || checkpointIndex < 0 || checkpointIndex >= _checkpoints.Length)
@@ -284,7 +403,25 @@ public class TutorialManager : MonoBehaviour
             if (_glowRoutines[checkpointIndex] != null)
                 StopCoroutine(_glowRoutines[checkpointIndex]);
 
-            _glowRoutines[checkpointIndex] = StartCoroutine(PulseCheckpointGlow(glowRenderer, checkpointIndex));
+            _glowRoutines[checkpointIndex] = StartCoroutine(PulseGlow(
+                glowRenderer,
+                () => _glowRoutines[checkpointIndex] = null));
+        }
+
+        AudioManager.Instance?.PlaySfx(_checkpointSounds, _checkpointSoundVolume);
+    }
+
+    private void PlayCombatAndHudUnlockFeedback()
+    {
+        Renderer glowRenderer = ResolveGlowRenderer(_combatAndHudUnlockTrigger, _combatAndHudUnlockGlowRenderer);
+        if (glowRenderer != null)
+        {
+            if (_combatAndHudUnlockGlowRoutine != null)
+                StopCoroutine(_combatAndHudUnlockGlowRoutine);
+
+            _combatAndHudUnlockGlowRoutine = StartCoroutine(PulseGlow(
+                glowRenderer,
+                () => _combatAndHudUnlockGlowRoutine = null));
         }
 
         AudioManager.Instance?.PlaySfx(_checkpointSounds, _checkpointSoundVolume);
@@ -295,31 +432,36 @@ public class TutorialManager : MonoBehaviour
         if (checkpoint == null)
             return null;
 
-        if (checkpoint.GlowRenderer != null)
-            return checkpoint.GlowRenderer;
+        return ResolveGlowRenderer(checkpoint.Trigger, checkpoint.GlowRenderer);
+    }
 
-        if (checkpoint.Trigger != null && checkpoint.Trigger.transform.parent != null)
+    private Renderer ResolveGlowRenderer(Collider trigger, Renderer explicitRenderer)
+    {
+        if (explicitRenderer != null)
+            return explicitRenderer;
+
+        if (trigger != null && trigger.transform.parent != null)
         {
-            Renderer parentRenderer = checkpoint.Trigger.transform.parent.GetComponent<Renderer>();
+            Renderer parentRenderer = trigger.transform.parent.GetComponent<Renderer>();
             if (parentRenderer != null)
                 return parentRenderer;
 
-            parentRenderer = checkpoint.Trigger.transform.parent.GetComponentInChildren<Renderer>();
+            parentRenderer = trigger.transform.parent.GetComponentInChildren<Renderer>();
             if (parentRenderer != null)
                 return parentRenderer;
         }
 
-        if (checkpoint.Trigger != null)
+        if (trigger != null)
         {
-            Renderer childRenderer = checkpoint.Trigger.GetComponentInChildren<Renderer>();
+            Renderer childRenderer = trigger.GetComponentInChildren<Renderer>();
             if (childRenderer != null)
                 return childRenderer;
         }
 
-        return checkpoint.Trigger != null ? checkpoint.Trigger.GetComponent<Renderer>() : null;
+        return trigger != null ? trigger.GetComponent<Renderer>() : null;
     }
 
-    private IEnumerator PulseCheckpointGlow(Renderer targetRenderer, int checkpointIndex)
+    private IEnumerator PulseGlow(Renderer targetRenderer, Action onComplete)
     {
         Material[] materials = targetRenderer.materials;
         var originalState = CaptureMaterialState(materials);
@@ -339,7 +481,7 @@ public class TutorialManager : MonoBehaviour
         }
 
         RestoreGlow(materials, originalState);
-        _glowRoutines[checkpointIndex] = null;
+        onComplete?.Invoke();
     }
 
     private MaterialState[] CaptureMaterialState(Material[] materials)
@@ -478,6 +620,177 @@ public class TutorialManager : MonoBehaviour
         _isCombatAndHudUnlocked = true;
         _playerCombat?.SetCombatEnabled(true);
         _tutorialHud?.SetLocalVisibilityOverride(true);
+        PlayCombatAndHudUnlockFeedback();
+    }
+
+    private void ActivateEnemiesAndFillSuper()
+    {
+        if (_hasActivatedEnemyAndSuperTrigger)
+            return;
+
+        _hasActivatedEnemyAndSuperTrigger = true;
+
+        if (_enemyAndSuperActivationEnemies != null)
+        {
+            for (int i = 0; i < _enemyAndSuperActivationEnemies.Length; i++)
+            {
+                if (_enemyAndSuperActivationEnemies[i] != null)
+                    _enemyAndSuperActivationEnemies[i].SetActive(true);
+            }
+        }
+
+        _playerCombat?.FillSuperMeter();
+        AudioManager.Instance?.PlaySfx(_enemyAndSuperActivationSound, _enemyAndSuperActivationSoundVolume);
+        PlayEnemyAndSuperActivationTint();
+    }
+
+    private void OnEnemyDied(EnemyDiedEvent e)
+    {
+        if (!_hasActivatedEnemyAndSuperTrigger || _hasShownEnemyAndSuperActivationCompleteText)
+            return;
+
+        if (_enemyAndSuperActivationEnemies == null || _enemyAndSuperActivationEnemies.Length == 0)
+            return;
+
+        if (_enemyAndSuperActivationEnemyEliminated == null ||
+            _enemyAndSuperActivationEnemyEliminated.Length != _enemyAndSuperActivationEnemies.Length)
+        {
+            _enemyAndSuperActivationEnemyEliminated = new bool[_enemyAndSuperActivationEnemies.Length];
+        }
+
+        bool matchedEnemy = false;
+        for (int i = 0; i < _enemyAndSuperActivationEnemies.Length; i++)
+        {
+            if (_enemyAndSuperActivationEnemyEliminated[i])
+                continue;
+
+            if (!IsTrackedEnemy(e.Enemy, _enemyAndSuperActivationEnemies[i]))
+                continue;
+
+            _enemyAndSuperActivationEnemyEliminated[i] = true;
+            matchedEnemy = true;
+            break;
+        }
+
+        if (matchedEnemy && AreEnemyAndSuperActivationEnemiesEliminated())
+            ShowEnemyAndSuperActivationCompleteText();
+    }
+
+    private bool AreEnemyAndSuperActivationEnemiesEliminated()
+    {
+        if (_enemyAndSuperActivationEnemies == null || _enemyAndSuperActivationEnemies.Length == 0)
+            return false;
+
+        for (int i = 0; i < _enemyAndSuperActivationEnemies.Length; i++)
+        {
+            if (_enemyAndSuperActivationEnemies[i] == null)
+                continue;
+
+            if (_enemyAndSuperActivationEnemyEliminated == null ||
+                i >= _enemyAndSuperActivationEnemyEliminated.Length ||
+                !_enemyAndSuperActivationEnemyEliminated[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsTrackedEnemy(GameObject deadEnemy, GameObject trackedEnemy)
+    {
+        if (deadEnemy == null || trackedEnemy == null)
+            return false;
+
+        if (deadEnemy == trackedEnemy)
+            return true;
+
+        Transform deadTransform = deadEnemy.transform;
+        Transform trackedTransform = trackedEnemy.transform;
+        return deadTransform.IsChildOf(trackedTransform) || trackedTransform.IsChildOf(deadTransform);
+    }
+
+    private void ShowEnemyAndSuperActivationCompleteText()
+    {
+        if (_enemyAndSuperActivationCompleteText == null)
+            return;
+
+        _hasShownEnemyAndSuperActivationCompleteText = true;
+
+        if (_enemyAndSuperActivationCompleteTextRoutine != null)
+            StopCoroutine(_enemyAndSuperActivationCompleteTextRoutine);
+
+        _enemyAndSuperActivationCompleteTextRoutine = StartCoroutine(EnemyAndSuperActivationCompleteTextFadeInRoutine());
+    }
+
+    private IEnumerator EnemyAndSuperActivationCompleteTextFadeInRoutine()
+    {
+        _enemyAndSuperActivationCompleteText.gameObject.SetActive(true);
+        _enemyAndSuperActivationCompleteText.enabled = true;
+
+        float targetAlpha = Mathf.Clamp01(_enemyAndSuperActivationCompleteTextTargetAlpha);
+        float duration = Mathf.Max(0f, _enemyAndSuperActivationCompleteTextFadeInDuration);
+
+        if (duration <= 0f)
+        {
+            SetEnemyAndSuperActivationCompleteTextAlpha(targetAlpha);
+            _enemyAndSuperActivationCompleteTextRoutine = null;
+            yield break;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            SetEnemyAndSuperActivationCompleteTextAlpha(Mathf.Lerp(0f, targetAlpha, Mathf.Clamp01(elapsed / duration)));
+            yield return null;
+        }
+
+        SetEnemyAndSuperActivationCompleteTextAlpha(targetAlpha);
+        _enemyAndSuperActivationCompleteTextRoutine = null;
+    }
+
+    private void PlayEnemyAndSuperActivationTint()
+    {
+        EnsureTransitionUi();
+
+        if (_enemyAndSuperActivationTintOverlay == null)
+            return;
+
+        if (_enemyAndSuperActivationTintRoutine != null)
+            StopCoroutine(_enemyAndSuperActivationTintRoutine);
+
+        _enemyAndSuperActivationTintRoutine = StartCoroutine(EnemyAndSuperActivationTintRoutine());
+    }
+
+    private IEnumerator EnemyAndSuperActivationTintRoutine()
+    {
+        _enemyAndSuperActivationTintOverlay.gameObject.SetActive(true);
+        _enemyAndSuperActivationTintOverlay.enabled = true;
+        _enemyAndSuperActivationTintOverlay.raycastTarget = false;
+        _enemyAndSuperActivationTintOverlay.transform.SetAsLastSibling();
+
+        float peakAlpha = Mathf.Clamp01(_enemyAndSuperActivationTintColor.a);
+        yield return StartCoroutine(FadeEnemyAndSuperActivationTintRoutine(0f, peakAlpha, _enemyAndSuperActivationTintFadeInDuration));
+        yield return StartCoroutine(FadeEnemyAndSuperActivationTintRoutine(peakAlpha, 0f, _enemyAndSuperActivationTintFadeOutDuration));
+
+        SetEnemyAndSuperActivationTintAlpha(0f);
+        _enemyAndSuperActivationTintRoutine = null;
+    }
+
+    private IEnumerator FadeEnemyAndSuperActivationTintRoutine(float fromAlpha, float toAlpha, float duration)
+    {
+        float elapsed = 0f;
+        float safeDuration = Mathf.Max(0.01f, duration);
+
+        while (elapsed < safeDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            SetEnemyAndSuperActivationTintAlpha(Mathf.Lerp(fromAlpha, toAlpha, Mathf.Clamp01(elapsed / safeDuration)));
+            yield return null;
+        }
+
+        SetEnemyAndSuperActivationTintAlpha(toAlpha);
     }
 
     private void CaptureOriginalFogSettings()
@@ -498,6 +811,7 @@ public class TutorialManager : MonoBehaviour
 
         _isFogZoneActive = true;
         ApplyFogSettings(0f);
+        BeginTutorialMusicFadeOut();
         BeginFogAudio();
     }
 
@@ -509,6 +823,7 @@ public class TutorialManager : MonoBehaviour
         _isFogZoneActive = false;
         RestoreOriginalFogSettings();
         StopFogAudio();
+        PlayTutorialMusic(false);
     }
 
     private void UpdateFogZone()
@@ -596,6 +911,171 @@ public class TutorialManager : MonoBehaviour
         _fogPointTransitionRoutine = null;
     }
 
+    private void PlayTutorialMusic(bool includeStartDelay)
+    {
+        if (_hasReachedFogPoint)
+            return;
+
+        AudioClip clip = _tutorialMusicTrack != null
+            ? _tutorialMusicTrack
+            : _tutorialMusicSource != null
+                ? _tutorialMusicSource.clip
+                : null;
+
+        if (clip == null)
+            return;
+
+        if (_tutorialMusicRoutine != null)
+        {
+            StopCoroutine(_tutorialMusicRoutine);
+            _tutorialMusicRoutine = null;
+        }
+
+        AudioSource source = EnsureTutorialMusicSource();
+        if (source == null)
+            return;
+
+        _tutorialMusicRoutine = StartCoroutine(TutorialMusicStartRoutine(source, clip, includeStartDelay));
+    }
+
+    private IEnumerator TutorialMusicStartRoutine(AudioSource source, AudioClip clip, bool includeStartDelay)
+    {
+        if (includeStartDelay)
+        {
+            float delay = Mathf.Max(0f, _tutorialMusicStartDelay);
+            if (delay > 0f)
+                yield return new WaitForSecondsRealtime(delay);
+        }
+
+        if (_hasReachedFogPoint || _isFogZoneActive || source == null || clip == null)
+        {
+            _tutorialMusicRoutine = null;
+            yield break;
+        }
+
+        MusicManager.Instance?.Stop();
+
+        if (source.isPlaying && source.clip != clip)
+            source.Stop();
+
+        source.clip = clip;
+        source.loop = true;
+        source.spatialBlend = 0f;
+        source.ignoreListenerPause = true;
+        source.volume = 0f;
+
+        if (!source.isPlaying)
+            source.Play();
+
+        _hasStartedTutorialMusic = true;
+
+        float targetVolume = Mathf.Clamp01(_tutorialMusicVolume);
+        float fadeDuration = Mathf.Max(0f, _tutorialMusicFadeInDuration);
+
+        if (fadeDuration <= 0f)
+        {
+            source.volume = targetVolume;
+            _tutorialMusicRoutine = null;
+            yield break;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < fadeDuration)
+        {
+            if (_hasReachedFogPoint || _isFogZoneActive || source == null)
+            {
+                _tutorialMusicRoutine = null;
+                yield break;
+            }
+
+            elapsed += Time.unscaledDeltaTime;
+            source.volume = Mathf.Lerp(0f, targetVolume, Mathf.Clamp01(elapsed / fadeDuration));
+            yield return null;
+        }
+
+        source.volume = targetVolume;
+        _tutorialMusicRoutine = null;
+    }
+
+    private void BeginTutorialMusicFadeOut()
+    {
+        if (!_hasStartedTutorialMusic || _tutorialMusicSource == null)
+            return;
+
+        if (_tutorialMusicRoutine != null)
+            StopCoroutine(_tutorialMusicRoutine);
+
+        _tutorialMusicRoutine = StartCoroutine(TutorialMusicFadeOutRoutine());
+    }
+
+    private IEnumerator TutorialMusicFadeOutRoutine()
+    {
+        AudioSource source = _tutorialMusicSource;
+        if (source == null)
+        {
+            _tutorialMusicRoutine = null;
+            yield break;
+        }
+
+        float startingVolume = source.volume;
+        float duration = Mathf.Max(0f, _tutorialMusicFadeOutDuration);
+
+        if (duration <= 0f)
+        {
+            source.volume = 0f;
+            source.Stop();
+            _hasStartedTutorialMusic = false;
+            _tutorialMusicRoutine = null;
+            yield break;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            source.volume = Mathf.Lerp(startingVolume, 0f, Mathf.Clamp01(elapsed / duration));
+            yield return null;
+        }
+
+        source.volume = 0f;
+        source.Stop();
+        _hasStartedTutorialMusic = false;
+        _tutorialMusicRoutine = null;
+    }
+
+    private AudioSource EnsureTutorialMusicSource()
+    {
+        if (_tutorialMusicSource != null)
+            return _tutorialMusicSource;
+
+        GameObject sourceObject = new GameObject("TutorialMusicSource");
+        sourceObject.transform.SetParent(transform, false);
+
+        _tutorialMusicSource = sourceObject.AddComponent<AudioSource>();
+        _tutorialMusicSource.playOnAwake = false;
+        _tutorialMusicSource.loop = true;
+        _tutorialMusicSource.spatialBlend = 0f;
+        _tutorialMusicSource.ignoreListenerPause = true;
+        return _tutorialMusicSource;
+    }
+
+    private void StopTutorialMusicImmediate()
+    {
+        if (_tutorialMusicRoutine != null)
+        {
+            StopCoroutine(_tutorialMusicRoutine);
+            _tutorialMusicRoutine = null;
+        }
+
+        if (_tutorialMusicSource != null)
+        {
+            _tutorialMusicSource.volume = 0f;
+            _tutorialMusicSource.Stop();
+        }
+
+        _hasStartedTutorialMusic = false;
+    }
+
     private void BeginFogAudio()
     {
         if (_hasStartedFogAudio)
@@ -667,7 +1147,7 @@ public class TutorialManager : MonoBehaviour
 
         if (AudioManager.Instance != null)
         {
-            float fadeOutDuration = Mathf.Max(0f, _normalMusicFadeOutDuration);
+            float fadeOutDuration = Mathf.Max(0f, _tutorialMusicFadeOutDuration);
             float elapsed = 0f;
 
             while (elapsed < fadeOutDuration)
@@ -798,6 +1278,7 @@ public class TutorialManager : MonoBehaviour
         EnsureEventSystem();
         EnsureTransitionCanvas();
         EnsureFadeOverlay();
+        EnsureEnemyAndSuperActivationTintOverlay();
         EnsureProceedPanel();
         ApplyProceedFont();
         ApplyProceedText();
@@ -878,6 +1359,31 @@ public class TutorialManager : MonoBehaviour
         _fadeOverlay.transform.SetAsLastSibling();
         _fadeOverlay.color = WithAlpha(_fadeColor, GetFadeOverlayAlpha());
         _fadeOverlay.raycastTarget = false;
+    }
+
+    private void EnsureEnemyAndSuperActivationTintOverlay()
+    {
+        if (_transitionCanvas == null)
+            return;
+
+        if (_enemyAndSuperActivationTintOverlay == null)
+        {
+            GameObject overlayObject = new GameObject("EnemyAndSuperActivationTintOverlay", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            overlayObject.transform.SetParent(_transitionCanvas.transform, false);
+
+            RectTransform rectTransform = overlayObject.GetComponent<RectTransform>();
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+
+            _enemyAndSuperActivationTintOverlay = overlayObject.GetComponent<Image>();
+        }
+
+        _enemyAndSuperActivationTintOverlay.gameObject.SetActive(true);
+        _enemyAndSuperActivationTintOverlay.enabled = true;
+        SetEnemyAndSuperActivationTintAlpha(0f);
+        _enemyAndSuperActivationTintOverlay.raycastTarget = false;
     }
 
     private void EnsureProceedPanel()
@@ -1025,6 +1531,24 @@ public class TutorialManager : MonoBehaviour
             return;
 
         _fadeOverlay.color = WithAlpha(_fadeColor, alpha);
+    }
+
+    private void SetEnemyAndSuperActivationTintAlpha(float alpha)
+    {
+        if (_enemyAndSuperActivationTintOverlay == null)
+            return;
+
+        _enemyAndSuperActivationTintOverlay.color = WithAlpha(_enemyAndSuperActivationTintColor, alpha);
+    }
+
+    private void SetEnemyAndSuperActivationCompleteTextAlpha(float alpha)
+    {
+        if (_enemyAndSuperActivationCompleteText == null)
+            return;
+
+        Color color = _enemyAndSuperActivationCompleteText.color;
+        color.a = Mathf.Clamp01(alpha);
+        _enemyAndSuperActivationCompleteText.color = color;
     }
 
     private float GetFadeOverlayAlpha()
