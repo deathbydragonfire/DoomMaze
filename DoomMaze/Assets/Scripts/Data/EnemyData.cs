@@ -23,10 +23,12 @@ public class EnemyData : ScriptableObject
     public float MoveSpeed;
     public EnemyAggroDetectionMode AggroDetectionMode = EnemyAggroDetectionMode.Radius;
     public float AggroRange;          // Max distance used for aggro checks in either mode
+    /*
     public float AttackRange;         // Distance at which enemy can attack
     public float AttackDamage;
     public float AttackRate;          // Attacks per second
     public DamageType AttackDamageType;
+    */
 
     [Header("Navigation")]
     public float StoppingDistance;
