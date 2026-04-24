@@ -13,8 +13,8 @@ using UnityEngine;
 [RequireComponent(typeof(MazePopulator))]
 public class MazeOverlapTester : MonoBehaviour
 {
-    private const string BossPrefabName    = "doors_2_straight_triple_base";
-    private const string UpgradePrefabName = "doors_2_straight_upgrade";
+    private const string BossPrefabName    = "50_2_room_100_100_tall";
+    private const string UpgradePrefabName = "50_2_straight_hallway_round";
 
     [Tooltip("Number of maps to generate and test.")]
     [SerializeField] private int testCount = 50;

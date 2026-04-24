@@ -183,21 +183,27 @@ public class MazePopulator : MonoBehaviour
                 Node     = node,
             };
 
+            // Capture the rollback index BEFORE any redirect, so that connector
+            // rooms committed by TryRedirect are also removed on downstream failure.
+            int committedAt = _placedRooms.Count;
+
+            // The direct parent of this room is the last room committed before this
+            // iteration — skip it in the overlap check since they are intentionally adjacent.
+            int parentRoomIndex = committedAt - 1;
+
             // If this prefab overlaps, try connector-based steering before moving on.
-            if (Overlaps(placed))
+            if (Overlaps(placed, parentRoomIndex))
             {
                 if (maxRedirectAttempts <= 0 || parentSocket == null)
                     continue; // Try next prefab variant.
 
-                PlacedRoom redirected = TryRedirect(node, parentSocket);
+                PlacedRoom redirected = TryRedirect(node, parentSocket, parentRoomIndex);
                 if (redirected != null)
                     placed = redirected;
                 else
                     continue; // No connector path cleared — try next prefab.
             }
 
-            // Commit this room; record the index so children can roll it back.
-            int committedAt = _placedRooms.Count;
             _placedRooms.Add(placed);
 
             // Resolve exit sockets in world space and recurse into children.
@@ -257,9 +263,9 @@ public class MazePopulator : MonoBehaviour
             Node     = node,
         };
 
-        if (maxRedirectAttempts > 0 && Overlaps(placed))
+        if (maxRedirectAttempts > 0 && Overlaps(placed, parentIndex: _placedRooms.Count - 1))
         {
-            PlacedRoom redirected = TryRedirect(node, parentSocket);
+            PlacedRoom redirected = TryRedirect(node, parentSocket, parentRoomIndex: _placedRooms.Count - 1);
             if (redirected != null)
                 placed = redirected;
             // Overlapping is acceptable here — we must produce a map.
@@ -293,7 +299,8 @@ public class MazePopulator : MonoBehaviour
     /// </summary>
     private PlacedRoom TryRedirect(
         MapGenerator.RoomNode node,
-        MazeSocket? parentSocket)
+        MazeSocket? parentSocket,
+        int parentRoomIndex = -1)
     {
         if (parentSocket == null) return null;
 
@@ -329,7 +336,8 @@ public class MazePopulator : MonoBehaviour
                     Node     = null,
                 };
 
-                if (Overlaps(connector1)) continue;
+                // The connector is directly connected to the parent — skip the parent in its check.
+                if (Overlaps(connector1, parentRoomIndex)) continue;
 
                 MazeSocket? bridgeSocket = WorldExitSocket(connector1, exitIndex: 0);
                 if (bridgeSocket == null) continue;
@@ -337,7 +345,9 @@ public class MazePopulator : MonoBehaviour
                 // --- Single-connector path ---
                 if (secondPool == null || secondPool.Count == 0)
                 {
-                    PlacedRoom candidate = TryPlaceRoom(node, roomPool, bridgeSocket);
+                    // The room candidate's parent is connector1, which isn't committed yet —
+                    // pass -1 and instead skip connector1 by index after it's added temporarily.
+                    PlacedRoom candidate = TryPlaceRoom(node, roomPool, bridgeSocket, skipIndex: -1);
                     if (candidate != null)
                     {
                         _placedRooms.Add(connector1);
@@ -358,12 +368,15 @@ public class MazePopulator : MonoBehaviour
                         Node     = null,
                     };
 
-                    if (Overlaps(connector2)) continue;
+                    // connector2's parent is connector1 — skip it by position comparison
+                    // since it isn't committed yet. Use parentRoomIndex to still skip the
+                    // original parent of the whole redirect chain.
+                    if (Overlaps(connector2, parentRoomIndex)) continue;
 
                     MazeSocket? targetSocket = WorldExitSocket(connector2, exitIndex: 0);
                     if (targetSocket == null) continue;
 
-                    PlacedRoom candidate = TryPlaceRoom(node, roomPool, targetSocket);
+                    PlacedRoom candidate = TryPlaceRoom(node, roomPool, targetSocket, skipIndex: -1);
                     if (candidate != null)
                     {
                         _placedRooms.Add(connector1);
@@ -381,12 +394,15 @@ public class MazePopulator : MonoBehaviour
     /// Tries every prefab in <paramref name="pool"/> (in shuffled order) at
     /// <paramref name="socket"/> and returns the first one that fits without overlap,
     /// with <see cref="PlacedRoom.Node"/> set to <paramref name="node"/>.
+    /// <paramref name="skipIndex"/> is forwarded to <see cref="Overlaps"/> to exclude
+    /// the direct parent room from the check. Pass -1 to check against all placed rooms.
     /// Returns null if nothing fits. Does NOT commit to <see cref="_placedRooms"/>.
     /// </summary>
     private PlacedRoom TryPlaceRoom(
         MapGenerator.RoomNode node,
         List<MazePrefab> pool,
-        MazeSocket? socket)
+        MazeSocket? socket,
+        int skipIndex = -1)
     {
         foreach (MazePrefab prefab in ShuffledCopy(pool))
         {
@@ -398,7 +414,7 @@ public class MazePopulator : MonoBehaviour
                 Prefab   = prefab,
                 Node     = node,
             };
-            if (!Overlaps(candidate))
+            if (!Overlaps(candidate, skipIndex))
                 return candidate;
         }
         return null;
@@ -464,11 +480,19 @@ public class MazePopulator : MonoBehaviour
         };
     }
 
-    /// <summary>Returns true if <paramref name="candidate"/> overlaps any already-placed room.</summary>
-    private bool Overlaps(PlacedRoom candidate)
+    /// <summary>
+    /// Returns true if <paramref name="candidate"/> overlaps any already-placed room,
+    /// skipping the room at <paramref name="parentIndex"/> (the direct parent this
+    /// candidate is connected to, which is intentionally adjacent).
+    /// Pass -1 to check against every placed room.
+    /// </summary>
+    private bool Overlaps(PlacedRoom candidate, int parentIndex = -1)
     {
-        foreach (PlacedRoom placed in _placedRooms)
+        for (int i = 0; i < _placedRooms.Count; i++)
         {
+            if (i == parentIndex) continue;
+
+            PlacedRoom placed = _placedRooms[i];
             float threshold = Mathf.Max(candidate.Prefab.OverlapThreshold, placed.Prefab.OverlapThreshold);
             if (Vector3.Distance(candidate.Position, placed.Position) < threshold)
                 return true;
@@ -610,33 +634,37 @@ public class MazePopulator : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns every pair of spawned rooms whose pivot positions are closer than
-    /// <paramref name="distanceThreshold"/>. Works reliably when all rooms share a
-    /// consistent size and socket layout.
+    /// Returns every pair of placed rooms whose pivot positions are closer than the
+    /// larger of the two rooms' <see cref="MazePrefab.OverlapThreshold"/> values —
+    /// the same rule used by the solver. The <paramref name="distanceThreshold"/>
+    /// parameter is used only as a fallback when a prefab reference is missing.
     /// </summary>
     public List<OverlapPair> FindOverlaps(float distanceThreshold)
     {
         var results = new List<OverlapPair>();
-        int count = Mathf.Min(_spawnedRooms.Count, _placedRooms.Count);
+        int count = _placedRooms.Count;
 
         for (int i = 0; i < count; i++)
         {
-            if (_spawnedRooms[i] == null) continue;
-            Vector3 posA = _spawnedRooms[i].transform.position;
+            PlacedRoom a = _placedRooms[i];
 
             for (int j = i + 1; j < count; j++)
             {
-                if (_spawnedRooms[j] == null) continue;
+                PlacedRoom b = _placedRooms[j];
 
-                float dist = Vector3.Distance(posA, _spawnedRooms[j].transform.position);
-                if (dist >= distanceThreshold) continue;
+                float threshold = (a.Prefab != null && b.Prefab != null)
+                    ? Mathf.Max(a.Prefab.OverlapThreshold, b.Prefab.OverlapThreshold)
+                    : distanceThreshold;
+
+                float dist = Vector3.Distance(a.Position, b.Position);
+                if (dist >= threshold) continue;
 
                 results.Add(new OverlapPair
                 {
-                    RoomA    = _placedRooms[i].Prefab != null ? _placedRooms[i].Prefab.name : "Unknown",
-                    RoomB    = _placedRooms[j].Prefab != null ? _placedRooms[j].Prefab.name : "Unknown",
-                    TypeA    = _placedRooms[i].Node   != null ? _placedRooms[i].Node.Type   : MapGenerator.RoomType.Hallway,
-                    TypeB    = _placedRooms[j].Node   != null ? _placedRooms[j].Node.Type   : MapGenerator.RoomType.Hallway,
+                    RoomA    = a.Prefab != null ? a.Prefab.name : "Unknown",
+                    RoomB    = b.Prefab != null ? b.Prefab.name : "Unknown",
+                    TypeA    = a.Node   != null ? a.Node.Type   : MapGenerator.RoomType.Hallway,
+                    TypeB    = b.Node   != null ? b.Node.Type   : MapGenerator.RoomType.Hallway,
                     Distance = dist,
                 });
             }
