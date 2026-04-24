@@ -49,6 +49,11 @@ public class MusicManager : MonoBehaviour
         _inactiveSource = _musicSourceB;
     }
 
+    private void Start()
+    {
+        ConfigureMusicOutputGroups();
+    }
+
     private void OnEnable()
     {
         EventBus<MusicZoneChangedEvent>.Subscribe(OnMusicZoneChanged);
@@ -68,6 +73,8 @@ public class MusicManager : MonoBehaviour
     /// <summary>Crossfades to the clip matching trackId. No-ops if already playing.</summary>
     public void PlayTrack(string trackId)
     {
+        ConfigureMusicOutputGroups();
+
         if (_musicDatabase == null) return;
 
         AudioClip clip = _musicDatabase.GetClip(trackId);
@@ -359,5 +366,11 @@ public class MusicManager : MonoBehaviour
     private float GetPauseFadeDuration()
     {
         return Mathf.Max(0.01f, _pauseFadeDuration);
+    }
+
+    private void ConfigureMusicOutputGroups()
+    {
+        AudioManager.Instance?.ConfigureMusicSource(_musicSourceA);
+        AudioManager.Instance?.ConfigureMusicSource(_musicSourceB);
     }
 }

@@ -1,16 +1,20 @@
 using System.Collections;
+using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 /// <summary>
-/// Owns the Main Menu scene canvas. Wires New Game, Continue, Settings, and Quit buttons.
-/// Interactability of Continue is determined at runtime via <see cref="SaveManager"/>.
+/// Owns the Main Menu scene canvas. Wires New Game, Settings, and Quit buttons.
 /// </summary>
 public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
 {
     [SerializeField] private Button     _continueButton;
     [SerializeField] private GameObject _settingsPanel;
+    [SerializeField] private TMP_FontAsset _menuFont;
+    [SerializeField] private string     _tutorialSceneName = "Tutorial";
+    [SerializeField] private string     _gameplaySceneName = "Gameplay";
     [SerializeField] private bool       _playMenuMusicOnStart = true;
     [SerializeField] private string     _menuMusicTrackId;
     [Header("New Game Transition")]
@@ -42,11 +46,15 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
 
     private void Awake()
     {
-        if (_continueButton == null) Debug.LogError("[MainMenuController] _continueButton is not assigned.");
         if (_settingsPanel  == null) Debug.LogError("[MainMenuController] _settingsPanel is not assigned.");
+
+        HideContinueButton();
+        ApplyMenuFont();
 
         _menuButtons = GetComponentsInChildren<Button>(true);
         _menuButtonInteractableStates = _menuButtons != null ? new bool[_menuButtons.Length] : null;
+        ReflowMainMenuButtons();
+
         if (_newGameShakeTarget == null)
             _newGameShakeTarget = transform;
 
@@ -78,10 +86,10 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
 
     private void Start()
     {
-        if (_continueButton != null && SaveManager.Instance != null)
-            _continueButton.interactable = SaveManager.Instance.HasSaveFile();
-
         TryPlayMenuMusic();
+        HideContinueButton();
+        ReflowMainMenuButtons();
+        ApplyMenuFont();
     }
 
     /// <summary>Deletes any existing save and loads the Gameplay scene.</summary>
@@ -93,15 +101,10 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
         _newGameTransitionCoroutine = StartCoroutine(NewGameTransitionRoutine());
     }
 
-    /// <summary>Loads the existing save and transitions to the Gameplay scene.</summary>
+    /// <summary>Unused. Runs are always started fresh from New Game.</summary>
     public void OnContinue()
     {
-        if (_isNewGameTransitioning)
-            return;
-
-        PlayClickSound();
-        SaveManager.Instance?.LoadGame();
-        SceneFlowManager.Instance?.LoadScene("Gameplay");
+        HideContinueButton();
     }
 
     /// <summary>Opens the settings panel.</summary>
@@ -110,9 +113,7 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
         if (_isNewGameTransitioning)
             return;
 
-        PlayClickSound();
-        if (_settingsPanel != null)
-            _settingsPanel.SetActive(true);
+        OpenSettingsPanel();
     }
 
     private void OnGameStateChanged(GameStateChangedEvent e)
@@ -192,7 +193,7 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
         else
             yield return null;
 
-        SceneFlowManager.Instance?.LoadScene("Gameplay");
+        SceneFlowManager.Instance?.LoadScene(GetNewGameSceneName());
     }
 
     private IEnumerator ShakeTransitionRoutine()
@@ -291,7 +292,7 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
         if (_newGameGlitchController != null)
             return _newGameGlitchController;
 
-        _newGameGlitchController = FindObjectOfType<HypeVolumeController>();
+        _newGameGlitchController = FindFirstObjectByType<HypeVolumeController>();
         if (_newGameGlitchController != null)
             return _newGameGlitchController;
 
@@ -346,5 +347,132 @@ public class MainMenuController : MonoBehaviour, IMenuHoverAudioProvider
             _newGameShakeTarget.localPosition = _shakeBaseLocalPosition;
 
         SetFadeOverlayAlpha(0f);
+    }
+
+    private void HideContinueButton()
+    {
+        if (_continueButton == null)
+            return;
+
+        _continueButton.interactable = false;
+        _continueButton.gameObject.SetActive(false);
+    }
+
+    private string GetNewGameSceneName()
+    {
+        bool skipTutorial = SaveManager.Instance != null &&
+            SaveManager.Instance.CurrentSettings != null &&
+            SaveManager.Instance.CurrentSettings.SkipTutorial;
+
+        return skipTutorial ? _gameplaySceneName : _tutorialSceneName;
+    }
+
+    private void OpenSettingsPanel()
+    {
+        if (_settingsPanel == null)
+        {
+            PlayClickSound();
+            return;
+        }
+
+        SettingsMenuController settingsMenu = _settingsPanel.GetComponent<SettingsMenuController>();
+        if (settingsMenu != null)
+        {
+            PlayClickSound();
+            settingsMenu.Open(playSound: false, replacedMenuRoot: transform);
+            return;
+        }
+
+        PlayClickSound();
+        _settingsPanel.SetActive(true);
+    }
+
+    private void ApplyMenuFont()
+    {
+        _menuFont = MenuFontUtility.ResolveMenuFont(transform, _menuFont);
+        MenuFontUtility.ApplyFont(transform, _menuFont);
+    }
+
+    private void ReflowMainMenuButtons()
+    {
+        List<Button> activeButtons = new List<Button>();
+        List<float> allMenuButtonYPositions = new List<float>();
+
+        Button[] buttons = GetComponentsInChildren<Button>(true);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            Button button = buttons[i];
+            if (button == null || button == _continueButton || IsSettingsPanelChild(button.transform))
+                continue;
+
+            RectTransform rectTransform = button.transform as RectTransform;
+            if (rectTransform == null)
+                continue;
+
+            allMenuButtonYPositions.Add(rectTransform.anchoredPosition.y);
+            if (button.gameObject.activeSelf)
+                activeButtons.Add(button);
+        }
+
+        if (_continueButton != null)
+        {
+            RectTransform continueRect = _continueButton.transform as RectTransform;
+            if (continueRect != null)
+                allMenuButtonYPositions.Add(continueRect.anchoredPosition.y);
+        }
+
+        if (activeButtons.Count <= 1)
+            return;
+
+        activeButtons.Sort((a, b) =>
+        {
+            RectTransform aRect = a.transform as RectTransform;
+            RectTransform bRect = b.transform as RectTransform;
+            return bRect.anchoredPosition.y.CompareTo(aRect.anchoredPosition.y);
+        });
+
+        float centerY = 0f;
+        for (int i = 0; i < allMenuButtonYPositions.Count; i++)
+            centerY += allMenuButtonYPositions[i];
+
+        centerY = allMenuButtonYPositions.Count > 0 ? centerY / allMenuButtonYPositions.Count : 0f;
+
+        float spacing = GetAverageButtonSpacing(activeButtons);
+        float startY = centerY + spacing * (activeButtons.Count - 1) * 0.5f;
+
+        for (int i = 0; i < activeButtons.Count; i++)
+        {
+            RectTransform rectTransform = activeButtons[i].transform as RectTransform;
+            Vector2 position = rectTransform.anchoredPosition;
+            position.y = startY - spacing * i;
+            rectTransform.anchoredPosition = position;
+        }
+    }
+
+    private float GetAverageButtonSpacing(List<Button> buttons)
+    {
+        const float fallbackSpacing = 92f;
+        if (buttons == null || buttons.Count < 2)
+            return fallbackSpacing;
+
+        float totalSpacing = 0f;
+        int spacingCount = 0;
+        for (int i = 1; i < buttons.Count; i++)
+        {
+            RectTransform previous = buttons[i - 1].transform as RectTransform;
+            RectTransform current = buttons[i].transform as RectTransform;
+            if (previous == null || current == null)
+                continue;
+
+            totalSpacing += Mathf.Abs(previous.anchoredPosition.y - current.anchoredPosition.y);
+            spacingCount++;
+        }
+
+        return spacingCount > 0 ? Mathf.Max(64f, totalSpacing / spacingCount) : fallbackSpacing;
+    }
+
+    private bool IsSettingsPanelChild(Transform candidate)
+    {
+        return _settingsPanel != null && candidate != null && candidate.IsChildOf(_settingsPanel.transform);
     }
 }
