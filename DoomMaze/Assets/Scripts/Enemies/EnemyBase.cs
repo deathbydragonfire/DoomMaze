@@ -35,7 +35,6 @@ public class EnemyBase : MonoBehaviour
     private const float HurtRecoveryTime = 0.4f;
 
     public EnemyState CurrentState { get; private set; }
-    public IAttackModule CurrentAttack { get; private set; }
     public EnemyData Data => _data;
     public bool IsAlive => _healthComponent.IsAlive;
     public bool IsGrappled { get; private set; }
@@ -43,7 +42,7 @@ public class EnemyBase : MonoBehaviour
 
     private NavMeshAgent _agent;
     private HealthComponent _healthComponent;
-    private IAttackModule[] _attackModules;
+    private IAttackModule _attackModule;
     private EnemySpriteBillboard _billboard;
     private EnemyHitFlash _hitFlash;
     private Collider[] _deathCollisionColliders;
@@ -65,7 +64,7 @@ public class EnemyBase : MonoBehaviour
 
         _agent = GetComponent<NavMeshAgent>();
         _healthComponent = GetComponent<HealthComponent>();
-        _attackModules = GetComponents<IAttackModule>();
+        _attackModule = GetComponent<IAttackModule>();
         _billboard = GetComponentInChildren<EnemySpriteBillboard>();
         _hitFlash = GetComponentInChildren<EnemyHitFlash>();
         _lineOfSightMask = GetLineOfSightMask();
@@ -73,10 +72,11 @@ public class EnemyBase : MonoBehaviour
         if (_data == null)
             Debug.LogWarning($"[EnemyBase] EnemyData is not assigned on {gameObject.name}. Assign in the Inspector.");
 
-        if (_attackModules == null)
+        if (_attackModule == null)
         {
             Debug.LogError(
-                $"[EnemyBase] No IAttackModule found on {gameObject.name}. ");
+                $"[EnemyBase] No IAttackModule found on {gameObject.name}. " +
+                "Attach MeleeAttackModule or RangedAttackModule.");
         }
     }
 
@@ -217,7 +217,7 @@ public class EnemyBase : MonoBehaviour
                 return;
             }
 
-            CurrentAttack?.Tick();
+            _attackModule?.Tick();
 
             return;
         }
@@ -268,7 +268,7 @@ public class EnemyBase : MonoBehaviour
 
     private bool CanAttackPlayer(bool canDetectPlayer, bool shouldPursuePlayer)
     {
-        if (PlayerTransform == null || _data == null || CurrentAttack == null || _distanceToPlayer > CurrentAttack.AttackRange)
+        if (PlayerTransform == null || _data == null || _distanceToPlayer > _data.AttackRange)
             return false;
 
         if (_data.AggroDetectionMode == EnemyAggroDetectionMode.LineOfSight)
@@ -349,7 +349,6 @@ public class EnemyBase : MonoBehaviour
                 StopAgent();
                 _alertTimer = AlertDwellTime;
                 _isShowingWalkAnimation = false;
-                CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
                 _billboard?.SetAnimation(_data?.IdleSprites);
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
@@ -361,7 +360,7 @@ public class EnemyBase : MonoBehaviour
 
             case EnemyState.Attack:
                 StopAgent();
-                CurrentAttack?.OnAttackEnter();
+                _attackModule?.OnAttackEnter();
                 _isShowingWalkAnimation = false;
                 if (_attackModule is IManualAttackAnimationModule)
                     _billboard?.SetAnimation(_data?.IdleSprites);
@@ -752,7 +751,7 @@ public class EnemyBase : MonoBehaviour
         UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, _data.AggroRange);
 
         UnityEditor.Handles.color = new Color(1f, 0.2f, 0.2f, 0.15f);
-        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, CurrentAttack.AttackRange);
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, _data.AttackRange);
     }
 #endif
 }
