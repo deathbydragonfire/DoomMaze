@@ -92,6 +92,7 @@ public class SaveManager : MonoBehaviour
             }
 
             CurrentSave = new SaveData();
+            EventBus<RunResetEvent>.Raise(new RunResetEvent());
         }
         catch (System.Exception ex)
         {

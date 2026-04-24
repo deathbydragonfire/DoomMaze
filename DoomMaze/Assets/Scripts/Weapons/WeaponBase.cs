@@ -54,7 +54,7 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
 
     protected virtual void Start()
     {
-        CurrentAmmo = _data != null ? _data.MagazineSize : 0;
+        CurrentAmmo = GetMagazineSize();
     }
 
     // ── IWeapon implementation ────────────────────────────────────────────────
@@ -78,7 +78,7 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
         if (!CanFire()) return;
 
         CurrentAmmo--;
-        _nextFireTime = Time.time + 1f / _data.FireRate;
+        _nextFireTime = Time.time + GetFireInterval();
 
         ExecuteFire();
 
@@ -120,7 +120,7 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
     {
         if (_isReloading || string.IsNullOrEmpty(_data.AmmoTypeId)) return;
         if (_playerInventory == null) return;
-        if (CurrentAmmo >= _data.MagazineSize) return;
+        if (CurrentAmmo >= GetMagazineSize()) return;
         if (_playerInventory.GetAmmo(_data.AmmoTypeId) <= 0) return;
 
         StartCoroutine(ReloadCoroutine());
@@ -161,10 +161,10 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
 
         AudioManager.Instance?.PlaySfx(_data.ReloadSounds);
 
-        float reloadTime = _data.ReloadTime > 0f ? _data.ReloadTime : 1f;
+        float reloadTime = GetReloadTime();
         yield return new WaitForSeconds(reloadTime);
 
-        int needed    = _data.MagazineSize - CurrentAmmo;
+        int needed    = GetMagazineSize() - CurrentAmmo;
         int available = _playerInventory.GetAmmo(_data.AmmoTypeId);
         int toLoad    = Mathf.Min(needed, available);
 
@@ -191,7 +191,7 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
 
     private IEnumerator FireStopCoroutine()
     {
-        float interval = _data != null && _data.FireRate > 0f ? 1f / _data.FireRate : 0.5f;
+        float interval = GetFireInterval();
         yield return new WaitForSeconds(interval * 2f);
         _spriteSequencer?.StopFiring();
         _fireStopCoroutine = null;
@@ -209,6 +209,51 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
             return;
 
         AudioManager.Instance?.PlaySfx(_data.FireSounds);
+    }
+
+    protected float GetDamage()
+    {
+        if (_data == null)
+            return 0f;
+
+        float multiplier = RunUpgradeManager.Current != null
+            ? RunUpgradeManager.Current.GetWeaponDamageMultiplier(_data)
+            : 1f;
+
+        return _data.Damage * multiplier;
+    }
+
+    protected float GetFireRate()
+    {
+        return _data != null && _data.FireRate > 0f ? _data.FireRate : 1f;
+    }
+
+    protected float GetFireInterval()
+    {
+        return 1f / Mathf.Max(0.01f, GetFireRate());
+    }
+
+    protected int GetMagazineSize()
+    {
+        return _data != null ? Mathf.Max(0, _data.MagazineSize) : 0;
+    }
+
+    protected float GetReloadTime()
+    {
+        if (_data == null)
+            return 1f;
+
+        float baseReloadTime = _data.ReloadTime > 0f ? _data.ReloadTime : 1f;
+        float multiplier = RunUpgradeManager.Current != null
+            ? RunUpgradeManager.Current.GetReloadTimeMultiplier(_data)
+            : 1f;
+
+        return Mathf.Max(0.01f, baseReloadTime * multiplier);
+    }
+
+    protected float GetRange()
+    {
+        return _data != null && _data.Range > 0f ? _data.Range : 0f;
     }
 
     protected abstract void ExecuteFire();

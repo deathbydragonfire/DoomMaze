@@ -400,7 +400,7 @@ public class PlayerMovement : MonoBehaviour
     {
         Vector3 moveDir = _cameraTransform.forward * _moveInput.y
                         + _cameraTransform.right * _moveInput.x;
-        transform.Translate(moveDir * (_stats.WalkSpeed * 2f) * Time.deltaTime, Space.World);
+        transform.Translate(moveDir * (GetWalkSpeed() * 2f) * Time.deltaTime, Space.World);
     }
 
     private void ApplyMovement()
@@ -439,7 +439,7 @@ public class PlayerMovement : MonoBehaviour
         UpdateBonusVelocity();
 
         float horizontalSpeed = GetHorizontalVelocity().magnitude;
-        CurrentSpeedRatio = Mathf.Clamp01(horizontalSpeed / (_stats.WalkSpeed * _stats.SprintMultiplier));
+        CurrentSpeedRatio = Mathf.Clamp01(horizontalSpeed / (GetWalkSpeed() * _stats.SprintMultiplier));
     }
 
     private Vector3 GetHorizontalMoveVelocity()
@@ -453,7 +453,7 @@ public class PlayerMovement : MonoBehaviour
         if (_isWallRunning)
             return GetWallRunMoveVelocity();
 
-        float speed = _stats.WalkSpeed;
+        float speed = GetWalkSpeed();
         if (_isSprinting)
             speed *= _stats.SprintMultiplier;
 
@@ -638,12 +638,27 @@ public class PlayerMovement : MonoBehaviour
         if (_stats == null)
             return 2;
 
-        return Mathf.Max(1, _stats.MaxJumpCount == 0 ? 2 : _stats.MaxJumpCount);
+        int baseJumpCount = Mathf.Max(1, _stats.MaxJumpCount == 0 ? 2 : _stats.MaxJumpCount);
+        int bonusJumpCount = RunUpgradeManager.Current != null ? RunUpgradeManager.Current.GetExtraJumpCount() : 0;
+        return baseJumpCount + Mathf.Max(0, bonusJumpCount);
     }
 
     private int GetMaxWallJumpCount()
     {
-        return MaxWallJumpsPerAirborneSequence;
+        int bonusWallJumps = RunUpgradeManager.Current != null ? RunUpgradeManager.Current.GetExtraWallJumpCount() : 0;
+        return MaxWallJumpsPerAirborneSequence + Mathf.Max(0, bonusWallJumps);
+    }
+
+    private float GetWalkSpeed()
+    {
+        if (_stats == null)
+            return 0f;
+
+        float multiplier = RunUpgradeManager.Current != null
+            ? RunUpgradeManager.Current.GetMovementSpeedMultiplier()
+            : 1f;
+
+        return _stats.WalkSpeed * multiplier;
     }
 
     private float GetAirJumpRedirectControlFactor()

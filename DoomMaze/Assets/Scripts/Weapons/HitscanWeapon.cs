@@ -48,7 +48,8 @@ public class HitscanWeapon : WeaponBase
             }
 
             Vector3 endPoint;
-            int hits = Physics.RaycastNonAlloc(origin, direction, _hitBuffer, _data.Range, _hitMask, QueryTriggerInteraction.Ignore);
+            float range = GetRange();
+            int hits = Physics.RaycastNonAlloc(origin, direction, _hitBuffer, range, _hitMask, QueryTriggerInteraction.Ignore);
 
             if (TryGetClosestHit(hits, out RaycastHit hit))
             {
@@ -60,7 +61,7 @@ public class HitscanWeapon : WeaponBase
             }
             else
             {
-                endPoint = origin + direction * _data.Range;
+                endPoint = origin + direction * range;
             }
 
             StartCoroutine(SpawnTracer(origin, endPoint));
@@ -155,7 +156,7 @@ public class HitscanWeapon : WeaponBase
         {
             health.TakeDamage(new DamageInfo
             {
-                Amount = _data.Damage,
+                Amount = GetDamage(),
                 Type = DamageType.Physical,
                 Source = gameObject
             });
@@ -164,7 +165,7 @@ public class HitscanWeapon : WeaponBase
 
         hitCollider.GetComponentInParent<IDamageable>()?.TakeDamage(new DamageInfo
         {
-            Amount = _data.Damage,
+            Amount = GetDamage(),
             Type = DamageType.Physical,
             Source = gameObject
         });

@@ -16,14 +16,8 @@ public class EnemyBase : MonoBehaviour
 {
     private const string EnemyLayerName = "Enemy";
     private const string EnemyTagName = "Enemy";
-    private const float DefaultPrimaryHitboxRadius = 0.9f;
-    private const float DefaultPrimaryHitboxHeight = 3.14f;
-    private static readonly Vector3 DefaultPrimaryHitboxCenter = new Vector3(0f, 0.9f, 0f);
-    private const float DefaultSecondaryHitboxRadius = 0.97f;
-    private const float DefaultSecondaryHitboxHeight = 3.65f;
-    private static readonly Vector3 DefaultSecondaryHitboxCenter = new Vector3(0f, 0.8f, 0f);
-    private static readonly Vector3 DefaultBoxHitboxCenter = new Vector3(0f, 0.95f, 0f);
-    private static readonly Vector3 DefaultBoxHitboxSize = new Vector3(1.9f, 2.2f, 1.9f);
+    private const float FallbackHitboxRadius = 0.5f;
+    private const float FallbackHitboxHeight = 1.8f;
 
     [SerializeField] private EnemyData _data;
     [SerializeField] private float _knockbackDecay = 18f;
@@ -44,6 +38,8 @@ public class EnemyBase : MonoBehaviour
     private IAttackModule _attackModule;
     private EnemySpriteBillboard _billboard;
     private EnemyHitFlash _hitFlash;
+    private Collider[] _deathCollisionColliders;
+    private bool[] _deathCollisionInitialEnabled;
 
     private float _alertTimer;
     private float _hurtTimer;
@@ -74,6 +70,15 @@ public class EnemyBase : MonoBehaviour
         }
     }
 
+    private void OnEnable()
+    {
+        if (_deathCollisionColliders == null)
+            return;
+
+        if (_healthComponent == null || _healthComponent.IsAlive)
+            SetDeathCollisionEnabled(true);
+    }
+
     private void Start()
     {
         GameObject playerObj = GameObject.FindWithTag("Player");
@@ -94,6 +99,8 @@ public class EnemyBase : MonoBehaviour
         }
 
         _billboard?.Initialize(_data);
+        CacheDeathCollisionColliders();
+        SetDeathCollisionEnabled(true);
         SetState(EnemyState.Idle);
     }
 
@@ -355,6 +362,7 @@ public class EnemyBase : MonoBehaviour
             case EnemyState.Dead:
                 _agent.isStopped = true;
                 _agent.enabled = false;
+                SetDeathCollisionEnabled(false);
                 _billboard?.SetAnimationOneShot(_data?.DeathSprites, OnDeathAnimationComplete);
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetDeathClip() : null, _data != null ? _data.DeathVolume : 1f);
                 break;
@@ -413,12 +421,59 @@ public class EnemyBase : MonoBehaviour
         _externalVelocity = Vector3.MoveTowards(_externalVelocity, Vector3.zero, decay * Time.deltaTime);
     }
 
+    private void CacheDeathCollisionColliders()
+    {
+        Collider[] colliders = GetComponentsInChildren<Collider>(true);
+        int collisionColliderCount = 0;
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider != null && !collider.isTrigger)
+                collisionColliderCount++;
+        }
+
+        _deathCollisionColliders = new Collider[collisionColliderCount];
+        _deathCollisionInitialEnabled = new bool[collisionColliderCount];
+
+        int index = 0;
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider == null || collider.isTrigger)
+                continue;
+
+            _deathCollisionColliders[index] = collider;
+            _deathCollisionInitialEnabled[index] = collider.enabled;
+            index++;
+        }
+    }
+
+    private void SetDeathCollisionEnabled(bool enabled)
+    {
+        if (_deathCollisionColliders == null)
+            CacheDeathCollisionColliders();
+
+        for (int i = 0; i < _deathCollisionColliders.Length; i++)
+        {
+            Collider collider = _deathCollisionColliders[i];
+            if (collider == null)
+                continue;
+
+            collider.enabled = enabled && _deathCollisionInitialEnabled[i];
+        }
+    }
+
     private void TryDropLoot()
     {
         if (_data == null || _data.PossibleDrops == null || _data.PossibleDrops.Length == 0)
             return;
 
-        if (Random.value > _data.DropChance)
+        float dropChance = _data.DropChance;
+        if (RunUpgradeManager.Current != null)
+            dropChance += RunUpgradeManager.Current.GetPickupDropChanceBonus();
+
+        if (Random.value > Mathf.Clamp01(dropChance))
             return;
 
         GameObject dropPrefab = _data.PossibleDrops[Random.Range(0, _data.PossibleDrops.Length)];
@@ -434,24 +489,23 @@ public class EnemyBase : MonoBehaviour
     private void EnsureRootHitboxes()
     {
         CapsuleCollider[] rootCapsules = GetComponents<CapsuleCollider>();
-        int activeRootCapsuleCount = 0;
+        float hitboxRadius = _data != null && _data.AgentRadius > 0f
+            ? Mathf.Max(0.3f, _data.AgentRadius * 1.15f)
+            : FallbackHitboxRadius;
+        float hitboxHeight = _data != null && _data.AgentHeight > 0f
+            ? Mathf.Max(1f, _data.AgentHeight)
+            : FallbackHitboxHeight;
+        Vector3 hitboxCenter = new(0f, hitboxHeight * 0.5f, 0f);
 
         for (int i = 0; i < rootCapsules.Length; i++)
         {
             CapsuleCollider capsule = rootCapsules[i];
-            if (capsule != null && capsule.enabled && !capsule.isTrigger)
-                activeRootCapsuleCount++;
+            if (capsule != null && i > 0)
+                capsule.enabled = false;
         }
 
-        if (activeRootCapsuleCount >= 2)
-        {
-            EnsureRootBoxHitbox();
-            return;
-        }
-
-        EnsureCapsuleCollider(rootCapsules, 0, DefaultPrimaryHitboxRadius, DefaultPrimaryHitboxHeight, DefaultPrimaryHitboxCenter);
-        EnsureCapsuleCollider(rootCapsules, 1, DefaultSecondaryHitboxRadius, DefaultSecondaryHitboxHeight, DefaultSecondaryHitboxCenter);
-        EnsureRootBoxHitbox();
+        EnsureCapsuleCollider(rootCapsules, 0, hitboxRadius, hitboxHeight, hitboxCenter);
+        EnsureRootBoxHitbox(hitboxRadius, hitboxHeight);
     }
 
     private void EnsureCapsuleCollider(
@@ -476,7 +530,7 @@ public class EnemyBase : MonoBehaviour
         capsule.center = center;
     }
 
-    private void EnsureRootBoxHitbox()
+    private void EnsureRootBoxHitbox(float hitboxRadius, float hitboxHeight)
     {
         BoxCollider boxCollider = GetComponent<BoxCollider>();
         if (boxCollider == null)
@@ -484,8 +538,8 @@ public class EnemyBase : MonoBehaviour
 
         boxCollider.isTrigger = false;
         boxCollider.enabled = true;
-        boxCollider.center = DefaultBoxHitboxCenter;
-        boxCollider.size = DefaultBoxHitboxSize;
+        boxCollider.center = new Vector3(0f, hitboxHeight * 0.5f, 0f);
+        boxCollider.size = new Vector3(hitboxRadius * 2f, hitboxHeight, hitboxRadius * 2f);
     }
 
     private void EnsureEnemyIdentification()

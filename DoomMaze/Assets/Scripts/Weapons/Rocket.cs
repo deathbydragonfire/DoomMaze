@@ -62,6 +62,7 @@ public class Rocket : MonoBehaviour
     private Coroutine _moveCoroutine;
     private bool _detonated;
     private float _flightTime;
+    private float _explosionRadiusMultiplier = 1f;
 
     private void Awake()
     {
@@ -93,13 +94,20 @@ public class Rocket : MonoBehaviour
     /// <summary>
     /// Activates the rocket and begins its flight toward <paramref name="direction"/>.
     /// </summary>
-    public void Launch(GameObject owner, Vector3 direction, float damage, float maxDistance, LayerMask hitMask)
+    public void Launch(
+        GameObject owner,
+        Vector3 direction,
+        float damage,
+        float maxDistance,
+        LayerMask hitMask,
+        float explosionRadiusMultiplier = 1f)
     {
         _ownerRoot = owner != null ? owner.transform.root : null;
         _direction = direction.normalized;
         _damage = damage;
         _maxDistance = Mathf.Max(0.1f, maxDistance);
         _hitMask = hitMask;
+        _explosionRadiusMultiplier = Mathf.Max(0.01f, explosionRadiusMultiplier);
         _detonated = false;
         _flightTime = 0f;
 
@@ -505,7 +513,8 @@ public class Rocket : MonoBehaviour
 
     private float GetExplosionRadius()
     {
-        return _explosionRadius > 0f ? _explosionRadius : DefaultExplosionRadius;
+        float baseRadius = _explosionRadius > 0f ? _explosionRadius : DefaultExplosionRadius;
+        return baseRadius * _explosionRadiusMultiplier;
     }
 
     private float GetKnockbackPower()
@@ -533,6 +542,7 @@ public class Rocket : MonoBehaviour
         _detonated = false;
         _ownerRoot = null;
         _flightTime = 0f;
+        _explosionRadiusMultiplier = 1f;
         StopFlightAudio();
         _pool?.Return(this);
     }

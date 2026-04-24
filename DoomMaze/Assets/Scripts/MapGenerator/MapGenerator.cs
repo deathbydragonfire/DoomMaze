@@ -130,7 +130,7 @@ public class MapGenerator : MonoBehaviour
 
         return parentType switch
         {
-            RoomType.Start   => RoomType.Enemy,
+            RoomType.Start   => RoomType.Hallway,
             RoomType.Enemy   => PickEnemyNext(parentDepth),
             RoomType.Hallway => PickHallwayNext(pathEnemyCount),
             RoomType.Upgrade => Roll(0.5f) ? RoomType.Hallway : RoomType.Enemy,

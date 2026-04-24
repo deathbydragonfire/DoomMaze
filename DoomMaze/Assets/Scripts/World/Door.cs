@@ -14,8 +14,9 @@ public class Door : MonoBehaviour, IInteractable
 
     private bool _isOpen;
     private bool _isTransitioning;
+    private bool _interactionLocked;
 
-    public bool CanInteract => !_isTransitioning;
+    public bool CanInteract => !_isTransitioning && !_interactionLocked;
 
     private void Awake()
     {
@@ -29,6 +30,9 @@ public class Door : MonoBehaviour, IInteractable
     /// </summary>
     public void Interact(GameObject interactor)
     {
+        if (_interactionLocked)
+            return;
+
         if (!string.IsNullOrEmpty(_requiredKeyId))
         {
             PlayerInventory inventory = interactor.GetComponentInParent<PlayerInventory>();
@@ -47,5 +51,26 @@ public class Door : MonoBehaviour, IInteractable
         _animator.SetBool(IS_OPEN_HASH, _isOpen);
 
         EventBus<DoorToggledEvent>.Raise(new DoorToggledEvent { IsOpen = _isOpen });
+    }
+
+    public void SetOpen(bool isOpen)
+    {
+        if (_isOpen == isOpen)
+            return;
+
+        _isOpen = isOpen;
+
+        if (_animator == null)
+            _animator = GetComponent<Animator>();
+
+        if (_animator != null)
+            _animator.SetBool(IS_OPEN_HASH, _isOpen);
+
+        EventBus<DoorToggledEvent>.Raise(new DoorToggledEvent { IsOpen = _isOpen });
+    }
+
+    public void SetInteractionLocked(bool locked)
+    {
+        _interactionLocked = locked;
     }
 }

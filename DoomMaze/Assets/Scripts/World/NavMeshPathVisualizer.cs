@@ -21,7 +21,7 @@ public class NavMeshPathVisualizer : MonoBehaviour
 
     private void Update()
     {
-        if (_agent == null || !_agent.isActiveAndEnabled) return;
+        if (_agent == null || !_agent.isActiveAndEnabled || !_agent.isOnNavMesh) return;
 
         _agent.CalculatePath(_agent.destination, _path);
 

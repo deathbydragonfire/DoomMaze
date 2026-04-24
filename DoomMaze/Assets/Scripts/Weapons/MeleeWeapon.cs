@@ -40,7 +40,7 @@ public class MeleeWeapon : WeaponBase
     {
         if (!CanFire()) return;
 
-        _nextFireTime = Time.time + 1f / _data.FireRate;
+        _nextFireTime = Time.time + GetFireInterval();
 
         ExecuteFire();
 
@@ -52,9 +52,10 @@ public class MeleeWeapon : WeaponBase
     /// <inheritdoc/>
     protected override void ExecuteFire()
     {
-        Vector3 attackOrigin = transform.position + transform.forward * (_data.Range * 0.5f);
+        float range = GetRange();
+        Vector3 attackOrigin = transform.position + transform.forward * (range * 0.5f);
 
-        int hitCount = Physics.OverlapSphereNonAlloc(attackOrigin, _data.Range, _overlapBuffer, _hitMask);
+        int hitCount = Physics.OverlapSphereNonAlloc(attackOrigin, range, _overlapBuffer, _hitMask);
 
         for (int i = 0; i < hitCount; i++)
         {
@@ -85,7 +86,7 @@ public class MeleeWeapon : WeaponBase
         {
             health.TakeDamage(new DamageInfo
             {
-                Amount = _data.Damage,
+                Amount = GetDamage(),
                 Type = DamageType.Physical,
                 Source = gameObject
             });
@@ -94,7 +95,7 @@ public class MeleeWeapon : WeaponBase
 
         hitCollider.GetComponentInParent<IDamageable>()?.TakeDamage(new DamageInfo
         {
-            Amount = _data.Damage,
+            Amount = GetDamage(),
             Type = DamageType.Physical,
             Source = gameObject
         });

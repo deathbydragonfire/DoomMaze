@@ -86,7 +86,7 @@ public class FlamethrowerWeapon : WeaponBase
         SyncFlameTransform();
 
         if (_particleDamage != null && _data != null)
-            _particleDamage.Configure(_data.Damage, 1f / Mathf.Max(_data.FireRate, 0.01f), gameObject, _hitMask);
+            _particleDamage.Configure(GetDamage(), GetFireInterval(), gameObject, _hitMask);
 
         if (_flameParticles != null && !_flameParticles.isPlaying)
             _flameParticles.Play(true);
@@ -286,8 +286,9 @@ public class FlamethrowerWeapon : WeaponBase
         if (cam == null)
             return origin.forward;
 
-        Vector3 aimPoint = cam.transform.position + cam.transform.forward * (_data != null ? _data.Range : 12f);
-        if (Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, _data != null ? _data.Range : 12f, _hitMask))
+        float range = GetRange() > 0f ? GetRange() : 12f;
+        Vector3 aimPoint = cam.transform.position + cam.transform.forward * range;
+        if (Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, range, _hitMask))
             aimPoint = hit.point;
 
         Vector3 direction = aimPoint - origin.position;
@@ -301,7 +302,7 @@ public class FlamethrowerWeapon : WeaponBase
 
         if (_triggerHeld && !_isOverheated)
         {
-            _currentHeat += _heatGainPerSecond * deltaTime;
+            _currentHeat += GetHeatGainPerSecond() * deltaTime;
             if (_currentHeat >= _maxHeat)
             {
                 _currentHeat = _maxHeat;
@@ -310,7 +311,7 @@ public class FlamethrowerWeapon : WeaponBase
         }
         else if (_currentHeat > 0f)
         {
-            _currentHeat = Mathf.Max(0f, _currentHeat - Mathf.Max(MIN_COOLDOWN_RATE, _heatCooldownPerSecond) * deltaTime);
+            _currentHeat = Mathf.Max(0f, _currentHeat - Mathf.Max(MIN_COOLDOWN_RATE, GetHeatCooldownPerSecond()) * deltaTime);
             if (_isOverheated && _currentHeat <= 0f)
                 _isOverheated = false;
         }
@@ -332,7 +333,7 @@ public class FlamethrowerWeapon : WeaponBase
 
         if (!_triggerHeld)
         {
-            _currentHeat = Mathf.Max(0f, _currentHeat - Mathf.Max(MIN_COOLDOWN_RATE, _heatCooldownPerSecond) * elapsed);
+            _currentHeat = Mathf.Max(0f, _currentHeat - Mathf.Max(MIN_COOLDOWN_RATE, GetHeatCooldownPerSecond()) * elapsed);
             if (_isOverheated && _currentHeat <= 0f)
                 _isOverheated = false;
         }
@@ -352,5 +353,23 @@ public class FlamethrowerWeapon : WeaponBase
             AudioManager.Instance?.PlaySfx(_overheatSounds);
         else if (_data != null)
             AudioManager.Instance?.PlaySfx(_data.EmptyClickSounds);
+    }
+
+    private float GetHeatGainPerSecond()
+    {
+        float multiplier = RunUpgradeManager.Current != null
+            ? RunUpgradeManager.Current.GetFlamethrowerHeatGainMultiplier()
+            : 1f;
+
+        return Mathf.Max(MIN_COOLDOWN_RATE, _heatGainPerSecond * multiplier);
+    }
+
+    private float GetHeatCooldownPerSecond()
+    {
+        float multiplier = RunUpgradeManager.Current != null
+            ? RunUpgradeManager.Current.GetFlamethrowerCooldownMultiplier()
+            : 1f;
+
+        return Mathf.Max(MIN_COOLDOWN_RATE, _heatCooldownPerSecond * multiplier);
     }
 }

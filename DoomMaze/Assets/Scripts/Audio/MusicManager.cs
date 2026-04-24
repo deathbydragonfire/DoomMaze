@@ -24,6 +24,11 @@ public class MusicManager : MonoBehaviour
     private AudioSource _pauseMusicSource;
     private float       _pausedGameplayResumeVolume = 1f;
     private string      _pauseTrackId;
+    private Coroutine   _temporaryMusicCoroutine;
+    private AudioSource _temporaryMusicSource;
+    private AudioSource _temporaryResumeSource;
+    private float       _temporaryResumeVolume = 1f;
+    private bool        _temporaryResumeWasPlaying;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -74,6 +79,7 @@ public class MusicManager : MonoBehaviour
     public void PlayTrack(string trackId)
     {
         ConfigureMusicOutputGroups();
+        StopTemporaryClipImmediate();
 
         if (_musicDatabase == null) return;
 
@@ -104,6 +110,72 @@ public class MusicManager : MonoBehaviour
         _pauseTrackId = null;
     }
 
+    /// <summary>Temporarily replaces normal music with a direct clip, preserving the current source for resume.</summary>
+    public void PlayTemporaryClip(AudioClip clip, float targetVolume, float fadeOutDuration, float fadeInDuration)
+    {
+        if (clip == null)
+            return;
+
+        ConfigureMusicOutputGroups();
+        targetVolume = Mathf.Clamp01(targetVolume);
+
+        if (_temporaryMusicSource != null && _temporaryMusicSource.clip == clip)
+        {
+            _temporaryMusicSource.volume = Mathf.Max(_temporaryMusicSource.volume, targetVolume);
+            return;
+        }
+
+        if (_temporaryMusicSource != null || _temporaryResumeSource != null)
+            StopTemporaryClipImmediate();
+
+        if (_temporaryMusicCoroutine != null)
+        {
+            StopCoroutine(_temporaryMusicCoroutine);
+            _temporaryMusicCoroutine = null;
+        }
+
+        _temporaryMusicCoroutine = StartCoroutine(PlayTemporaryClipRoutine(
+            clip,
+            targetVolume,
+            Mathf.Max(0.01f, fadeOutDuration),
+            Mathf.Max(0.01f, fadeInDuration)));
+    }
+
+    /// <summary>Temporarily fades normal music to silence, preserving it for resume.</summary>
+    public void PlayTemporarySilence(float fadeOutDuration)
+    {
+        ConfigureMusicOutputGroups();
+
+        if (_temporaryResumeSource != null && _temporaryMusicSource == null)
+            return;
+
+        if (_temporaryMusicSource != null || _temporaryResumeSource != null)
+            StopTemporaryClipImmediate();
+
+        if (_temporaryMusicCoroutine != null)
+        {
+            StopCoroutine(_temporaryMusicCoroutine);
+            _temporaryMusicCoroutine = null;
+        }
+
+        _temporaryMusicCoroutine = StartCoroutine(PlayTemporarySilenceRoutine(Mathf.Max(0.01f, fadeOutDuration)));
+    }
+
+    /// <summary>Stops a temporary direct clip and fades the previous normal music back in.</summary>
+    public void StopTemporaryClip(float fadeOutDuration)
+    {
+        if (_temporaryMusicSource == null && _temporaryResumeSource == null)
+            return;
+
+        if (_temporaryMusicCoroutine != null)
+        {
+            StopCoroutine(_temporaryMusicCoroutine);
+            _temporaryMusicCoroutine = null;
+        }
+
+        _temporaryMusicCoroutine = StartCoroutine(StopTemporaryClipRoutine(Mathf.Max(0.01f, fadeOutDuration)));
+    }
+
     /// <summary>Stops all music immediately.</summary>
     public void Stop()
     {
@@ -119,6 +191,12 @@ public class MusicManager : MonoBehaviour
             _pauseTransitionCoroutine = null;
         }
 
+        if (_temporaryMusicCoroutine != null)
+        {
+            StopCoroutine(_temporaryMusicCoroutine);
+            _temporaryMusicCoroutine = null;
+        }
+
         _activeSource.Stop();
         _inactiveSource.Stop();
         _activeSource.volume = 1f;
@@ -126,6 +204,10 @@ public class MusicManager : MonoBehaviour
         _pausedGameplaySource = null;
         _pauseMusicSource = null;
         _pausedGameplayResumeVolume = 1f;
+        _temporaryMusicSource = null;
+        _temporaryResumeSource = null;
+        _temporaryResumeVolume = 1f;
+        _temporaryResumeWasPlaying = false;
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
@@ -155,6 +237,173 @@ public class MusicManager : MonoBehaviour
     }
 
     // ── EventBus handlers ─────────────────────────────────────────────────────
+
+    private IEnumerator PlayTemporarySilenceRoutine(float fadeOutDuration)
+    {
+        StabilizeCurrentMusicState();
+
+        _temporaryMusicSource = null;
+        _temporaryResumeSource = GetDominantPlayingSource();
+        _temporaryResumeWasPlaying = _temporaryResumeSource != null
+            && _temporaryResumeSource.isPlaying
+            && _temporaryResumeSource.clip != null;
+        _temporaryResumeVolume = _temporaryResumeSource != null
+            ? Mathf.Max(_temporaryResumeSource.volume, 0.0001f)
+            : 1f;
+
+        if (_temporaryResumeWasPlaying)
+        {
+            float startingVolume = _temporaryResumeSource.volume;
+            float elapsed = 0f;
+            while (elapsed < fadeOutDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeOutDuration);
+                _temporaryResumeSource.volume = Mathf.Lerp(startingVolume, 0f, t);
+                yield return null;
+            }
+
+            _temporaryResumeSource.volume = 0f;
+            _temporaryResumeSource.Pause();
+        }
+
+        _temporaryMusicCoroutine = null;
+    }
+
+    private IEnumerator PlayTemporaryClipRoutine(AudioClip clip, float targetVolume, float fadeOutDuration, float fadeInDuration)
+    {
+        StabilizeCurrentMusicState();
+
+        _temporaryResumeSource = GetDominantPlayingSource();
+        _temporaryResumeWasPlaying = _temporaryResumeSource != null
+            && _temporaryResumeSource.isPlaying
+            && _temporaryResumeSource.clip != null;
+        _temporaryResumeVolume = _temporaryResumeSource != null
+            ? Mathf.Max(_temporaryResumeSource.volume, 0.0001f)
+            : 1f;
+
+        _temporaryMusicSource = GetAlternateSource(_temporaryResumeSource);
+        if (_temporaryMusicSource == null)
+        {
+            _temporaryMusicCoroutine = null;
+            yield break;
+        }
+
+        _temporaryMusicSource.Stop();
+        _temporaryMusicSource.clip = clip;
+        _temporaryMusicSource.loop = true;
+        _temporaryMusicSource.volume = 0f;
+        _temporaryMusicSource.Play();
+
+        if (_temporaryResumeWasPlaying)
+        {
+            float startingVolume = _temporaryResumeSource.volume;
+            float elapsed = 0f;
+            while (elapsed < fadeOutDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / fadeOutDuration);
+                _temporaryResumeSource.volume = Mathf.Lerp(startingVolume, 0f, t);
+                yield return null;
+            }
+
+            _temporaryResumeSource.volume = 0f;
+            _temporaryResumeSource.Pause();
+        }
+
+        float fadeInElapsed = 0f;
+        while (fadeInElapsed < fadeInDuration)
+        {
+            fadeInElapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(fadeInElapsed / fadeInDuration);
+            _temporaryMusicSource.volume = Mathf.Lerp(0f, targetVolume, t);
+            yield return null;
+        }
+
+        _temporaryMusicSource.volume = targetVolume;
+        _activeSource = _temporaryMusicSource;
+        _inactiveSource = GetAlternateSource(_activeSource);
+        _temporaryMusicCoroutine = null;
+    }
+
+    private IEnumerator StopTemporaryClipRoutine(float fadeOutDuration)
+    {
+        AudioSource temporarySource = _temporaryMusicSource;
+        AudioSource resumeSource = _temporaryResumeSource;
+        float resumeTargetVolume = Mathf.Max(_temporaryResumeVolume, 0.0001f);
+        bool shouldResume = _temporaryResumeWasPlaying && resumeSource != null && resumeSource.clip != null;
+
+        if (shouldResume)
+        {
+            resumeSource.UnPause();
+            resumeSource.volume = 0f;
+        }
+
+        float temporaryStartVolume = temporarySource != null ? temporarySource.volume : 0f;
+        float elapsed = 0f;
+        while (elapsed < fadeOutDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / fadeOutDuration);
+
+            if (temporarySource != null)
+                temporarySource.volume = Mathf.Lerp(temporaryStartVolume, 0f, t);
+
+            if (shouldResume)
+                resumeSource.volume = Mathf.Lerp(0f, resumeTargetVolume, t);
+
+            yield return null;
+        }
+
+        if (temporarySource != null)
+        {
+            temporarySource.volume = 0f;
+            temporarySource.Stop();
+            temporarySource.clip = null;
+        }
+
+        if (shouldResume)
+        {
+            resumeSource.volume = resumeTargetVolume;
+            _activeSource = resumeSource;
+            _inactiveSource = GetAlternateSource(resumeSource);
+        }
+
+        _temporaryMusicSource = null;
+        _temporaryResumeSource = null;
+        _temporaryResumeVolume = 1f;
+        _temporaryResumeWasPlaying = false;
+        _temporaryMusicCoroutine = null;
+    }
+
+    private void StopTemporaryClipImmediate()
+    {
+        if (_temporaryMusicCoroutine != null)
+        {
+            StopCoroutine(_temporaryMusicCoroutine);
+            _temporaryMusicCoroutine = null;
+        }
+
+        if (_temporaryMusicSource != null)
+        {
+            _temporaryMusicSource.volume = 0f;
+            _temporaryMusicSource.Stop();
+            _temporaryMusicSource.clip = null;
+        }
+
+        if (_temporaryResumeWasPlaying && _temporaryResumeSource != null && _temporaryResumeSource.clip != null)
+        {
+            _temporaryResumeSource.UnPause();
+            _temporaryResumeSource.volume = Mathf.Max(_temporaryResumeVolume, 0.0001f);
+            _activeSource = _temporaryResumeSource;
+            _inactiveSource = GetAlternateSource(_temporaryResumeSource);
+        }
+
+        _temporaryMusicSource = null;
+        _temporaryResumeSource = null;
+        _temporaryResumeVolume = 1f;
+        _temporaryResumeWasPlaying = false;
+    }
 
     private void OnMusicZoneChanged(MusicZoneChangedEvent e)
     {

@@ -25,6 +25,8 @@ public struct GameSavedEvent { }
 
 public struct GameLoadedEvent { }
 
+public struct RunResetEvent { }
+
 // ── Phase 2: Player events ────────────────────────────────────────────────────
 
 public struct PlayerDamagedEvent   { public int CurrentHealth; public int MaxHealth; public DamageInfo Info; }
@@ -59,6 +61,7 @@ public struct EnemyDiedEvent    { public UnityEngine.GameObject Enemy; public st
 // ── Phase 6: Pickups & World events ──────────────────────────────────────────
 public struct PickupCollectedEvent    { public string PickupId; }
 public struct WeaponPickedUpEvent     { public WeaponData WeaponData; }
+public struct UpgradeCollectedEvent   { public string UpgradeId; public string DisplayName; public int Rank; public int MaxRank; }
 public struct DoorToggledEvent        { public bool IsOpen; }
 public struct DoorLockedEvent         { public string RequiredKeyId; }
 public struct SwitchActivatedEvent    { }
