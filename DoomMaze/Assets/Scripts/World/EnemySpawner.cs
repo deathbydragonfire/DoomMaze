@@ -52,7 +52,7 @@ public class EnemySpawner : MonoBehaviour
         _intervalTimer -= Time.deltaTime;
         if (_intervalTimer <= 0f)
         {
-            _intervalTimer = _spawnInterval;
+            _intervalTimer = GetScaledSpawnInterval();
             Spawn();
         }
     }
@@ -82,5 +82,11 @@ public class EnemySpawner : MonoBehaviour
         EnemyBase enemy = evt.Enemy.GetComponent<EnemyBase>();
         if (enemy != null)
             _pool.Return(enemy);
+    }
+
+    private float GetScaledSpawnInterval()
+    {
+        float multiplier = Mathf.Max(0.01f, GameDifficultyManager.CurrentProfile.EnemySpawnRateMultiplier);
+        return _spawnInterval / multiplier;
     }
 }

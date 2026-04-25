@@ -16,14 +16,15 @@ public class EnemyBase : MonoBehaviour
 {
     private const string EnemyLayerName = "Enemy";
     private const string EnemyTagName = "Enemy";
-    private const float DefaultPrimaryHitboxRadius = 0.9f;
-    private const float DefaultPrimaryHitboxHeight = 3.14f;
-    private static readonly Vector3 DefaultPrimaryHitboxCenter = new Vector3(0f, 0.9f, 0f);
-    private const float DefaultSecondaryHitboxRadius = 0.97f;
-    private const float DefaultSecondaryHitboxHeight = 3.65f;
-    private static readonly Vector3 DefaultSecondaryHitboxCenter = new Vector3(0f, 0.8f, 0f);
-    private static readonly Vector3 DefaultBoxHitboxCenter = new Vector3(0f, 0.95f, 0f);
-    private static readonly Vector3 DefaultBoxHitboxSize = new Vector3(1.9f, 2.2f, 1.9f);
+    private const float FallbackHitboxRadius = 0.5f;
+    private const float FallbackHitboxHeight = 1.8f;
+    private const float HitboxRadiusMultiplier = 1.75f;
+    private const float HitboxHeightMultiplier = 1.35f;
+    private const float MinimumHitboxRadius = 0.65f;
+    private const float MinimumHitboxHeight = 2.4f;
+    private const float NavMeshSpawnSampleDistance = 4f;
+    private const float StuckRecoveryDelay = 1.25f;
+    private const float StuckMoveThresholdSqr = 0.0004f;
 
     [SerializeField] private EnemyData _data;
     [SerializeField] private float _knockbackDecay = 18f;
@@ -34,6 +35,7 @@ public class EnemyBase : MonoBehaviour
     private const float HurtRecoveryTime = 0.4f;
 
     public EnemyState CurrentState { get; private set; }
+    public IAttackModule CurrentAttack { get; private set; }
     public EnemyData Data => _data;
     public bool IsAlive => _healthComponent.IsAlive;
     public bool IsGrappled { get; private set; }
@@ -41,14 +43,19 @@ public class EnemyBase : MonoBehaviour
 
     private NavMeshAgent _agent;
     private HealthComponent _healthComponent;
-    private IAttackModule _attackModule;
+    private IAttackModule[] _attackModules;
     private EnemySpriteBillboard _billboard;
     private EnemyHitFlash _hitFlash;
+    private Collider[] _deathCollisionColliders;
+    private bool[] _deathCollisionInitialEnabled;
 
     private float _alertTimer;
     private float _hurtTimer;
     private float _distanceToPlayer;
     private Vector3 _externalVelocity;
+    private Vector3 _lastStuckCheckPosition;
+    private float _stuckTimer;
+    private bool _isShowingWalkAnimation;
     private int _lineOfSightMask;
 
     private void Awake()
@@ -58,7 +65,7 @@ public class EnemyBase : MonoBehaviour
 
         _agent = GetComponent<NavMeshAgent>();
         _healthComponent = GetComponent<HealthComponent>();
-        _attackModule = GetComponent<IAttackModule>();
+        _attackModules = GetComponents<IAttackModule>();
         _billboard = GetComponentInChildren<EnemySpriteBillboard>();
         _hitFlash = GetComponentInChildren<EnemyHitFlash>();
         _lineOfSightMask = GetLineOfSightMask();
@@ -66,12 +73,19 @@ public class EnemyBase : MonoBehaviour
         if (_data == null)
             Debug.LogWarning($"[EnemyBase] EnemyData is not assigned on {gameObject.name}. Assign in the Inspector.");
 
-        if (_attackModule == null)
+        if (_attackModules == null)
         {
             Debug.LogError(
-                $"[EnemyBase] No IAttackModule found on {gameObject.name}. " +
-                "Attach MeleeAttackModule or RangedAttackModule.");
+                $"[EnemyBase] No IAttackModule found on {gameObject.name}. ");
         }
+    }
+
+    private void OnEnable()
+    {
+        if (_agent == null || _healthComponent == null)
+            return;
+
+        ResetForSpawn();
     }
 
     private void Start()
@@ -85,15 +99,11 @@ public class EnemyBase : MonoBehaviour
         _healthComponent.OnDied += OnDeath;
         _healthComponent.OnDamaged += OnHurt;
 
-        if (_data != null)
-        {
-            _agent.speed = _data.MoveSpeed;
-            _agent.stoppingDistance = _data.StoppingDistance;
-            _agent.radius = _data.AgentRadius;
-            _agent.height = _data.AgentHeight;
-        }
+        ConfigureAgentFromData();
 
         _billboard?.Initialize(_data);
+        CacheDeathCollisionColliders();
+        SetDeathCollisionEnabled(true);
         SetState(EnemyState.Idle);
     }
 
@@ -112,6 +122,7 @@ public class EnemyBase : MonoBehaviour
             return;
 
         TickStateMachine();
+        RecoverIfStuck();
         ApplyExternalVelocity();
     }
 
@@ -135,8 +146,9 @@ public class EnemyBase : MonoBehaviour
 
         IsGrappled = false;
         CurrentState = EnemyState.Hurt;
-        _agent.isStopped = true;
+        StopAgent();
         _hurtTimer = duration;
+        _isShowingWalkAnimation = false;
         _billboard?.SetAnimation(_data?.HurtSprites, loop: false);
         AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
     }
@@ -151,6 +163,14 @@ public class EnemyBase : MonoBehaviour
             return;
 
         _externalVelocity += horizontalImpulse;
+    }
+
+    public void PlayAttackAnimationOneShot()
+    {
+        if (_billboard == null || _data == null)
+            return;
+
+        _billboard.SetAnimationOneShot(_data.AttackSprites, RestorePostAttackAnimation);
     }
 
     private void TickStateMachine()
@@ -189,7 +209,7 @@ public class EnemyBase : MonoBehaviour
 
         if (CurrentState == EnemyState.Attack)
         {
-            _agent.isStopped = true;
+            StopAgent();
 
             if (!canAttackPlayer)
             {
@@ -197,7 +217,7 @@ public class EnemyBase : MonoBehaviour
                 return;
             }
 
-            _attackModule?.Tick();
+            CurrentAttack?.Tick();
 
             return;
         }
@@ -215,7 +235,7 @@ public class EnemyBase : MonoBehaviour
                 if (CurrentState != EnemyState.Chase)
                     SetState(EnemyState.Alert);
                 else
-                    _agent.SetDestination(PlayerTransform.position);
+                    SetChaseDestination(PlayerTransform.position);
 
                 return;
             }
@@ -248,7 +268,7 @@ public class EnemyBase : MonoBehaviour
 
     private bool CanAttackPlayer(bool canDetectPlayer, bool shouldPursuePlayer)
     {
-        if (PlayerTransform == null || _data == null || _distanceToPlayer > _data.AttackRange)
+        if (PlayerTransform == null || _data == null || CurrentAttack == null || _distanceToPlayer > CurrentAttack.AttackRange)
             return false;
 
         if (_data.AggroDetectionMode == EnemyAggroDetectionMode.LineOfSight)
@@ -320,41 +340,48 @@ public class EnemyBase : MonoBehaviour
         switch (next)
         {
             case EnemyState.Idle:
-                _agent.isStopped = true;
-                _agent.ResetPath();
+                StopAgent(resetPath: true);
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.IdleSprites);
                 break;
 
             case EnemyState.Alert:
-                _agent.isStopped = true;
+                StopAgent();
                 _alertTimer = AlertDwellTime;
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.IdleSprites);
+                CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
 
             case EnemyState.Chase:
-                _agent.isStopped = false;
                 if (PlayerTransform != null)
-                    _agent.SetDestination(PlayerTransform.position);
-                _billboard?.SetAnimation(_data?.WalkSprites);
+                    SetChaseDestination(PlayerTransform.position);
                 break;
 
             case EnemyState.Attack:
-                _agent.isStopped = true;
-                _attackModule?.OnAttackEnter();
-                _billboard?.SetAnimation(_data?.AttackSprites);
+                StopAgent();
+                CurrentAttack.OnAttackEnter();
+                _isShowingWalkAnimation = false;
+                if (CurrentAttack is IManualAttackAnimationModule)
+                    _billboard?.SetAnimation(_data?.IdleSprites);
+                else
+                    _billboard?.SetAnimation(_data?.AttackSprites);
                 break;
 
             case EnemyState.Hurt:
-                _agent.isStopped = true;
+                StopAgent();
                 _hurtTimer = HurtRecoveryTime;
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.HurtSprites, loop: false);
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
                 break;
 
             case EnemyState.Dead:
-                _agent.isStopped = true;
+                StopAgent();
                 _agent.enabled = false;
+                SetDeathCollisionEnabled(false);
+                _isShowingWalkAnimation = false;
                 _billboard?.SetAnimationOneShot(_data?.DeathSprites, OnDeathAnimationComplete);
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetDeathClip() : null, _data != null ? _data.DeathVolume : 1f);
                 break;
@@ -398,6 +425,167 @@ public class EnemyBase : MonoBehaviour
         gameObject.SetActive(false);
     }
 
+    private void ResetForSpawn()
+    {
+        IsGrappled = false;
+        _alertTimer = 0f;
+        _hurtTimer = 0f;
+        _stuckTimer = 0f;
+        _isShowingWalkAnimation = false;
+        _externalVelocity = Vector3.zero;
+        _lastStuckCheckPosition = transform.position;
+
+        RemoveGrappledStates();
+        _healthComponent.ResetHealth();
+        ConfigureAgentFromData();
+
+        TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance);
+        StopAgent(resetPath: true);
+        SetDeathCollisionEnabled(true);
+
+        CurrentState = EnemyState.Idle;
+        CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
+        _billboard?.SetAnimation(_data?.IdleSprites);
+    }
+
+    private void RestorePostAttackAnimation()
+    {
+        if (CurrentState != EnemyState.Attack || !IsAlive)
+            return;
+
+        _isShowingWalkAnimation = false;
+        _billboard?.SetAnimation(_data?.IdleSprites);
+    }
+
+    private void ConfigureAgentFromData()
+    {
+        if (_agent == null || _data == null)
+            return;
+
+        _agent.speed = _data.MoveSpeed;
+        _agent.stoppingDistance = _data.StoppingDistance;
+        _agent.radius = _data.AgentRadius;
+        _agent.height = _data.AgentHeight;
+    }
+
+    private void RemoveGrappledStates()
+    {
+        GrappledState[] grappledStates = GetComponents<GrappledState>();
+        for (int i = 0; i < grappledStates.Length; i++)
+        {
+            if (grappledStates[i] != null)
+                Destroy(grappledStates[i]);
+        }
+    }
+
+    private void StopAgent(bool resetPath = false)
+    {
+        if (_agent == null || !_agent.enabled)
+            return;
+
+        if (!_agent.isOnNavMesh)
+            return;
+
+        _agent.isStopped = true;
+
+        if (resetPath && _agent.isOnNavMesh)
+            _agent.ResetPath();
+    }
+
+    private bool TrySetAgentDestination(Vector3 destination)
+    {
+        if (_agent == null)
+            return false;
+
+        if ((!_agent.enabled || !_agent.isOnNavMesh) && !TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance))
+            return false;
+
+        _agent.isStopped = false;
+        return _agent.SetDestination(destination);
+    }
+
+    private void SetChaseDestination(Vector3 destination)
+    {
+        if (TrySetAgentDestination(destination))
+        {
+            if (!_isShowingWalkAnimation)
+            {
+                _isShowingWalkAnimation = true;
+                _billboard?.SetAnimation(_data?.WalkSprites);
+            }
+        }
+        else
+        {
+            if (_isShowingWalkAnimation)
+            {
+                _isShowingWalkAnimation = false;
+                _billboard?.SetAnimation(_data?.IdleSprites);
+            }
+        }
+    }
+
+    private bool TryPlaceAgentOnNavMesh(float sampleDistance)
+    {
+        if (_agent == null)
+            return false;
+
+        if (_agent.enabled && _agent.isOnNavMesh)
+            return true;
+
+        if (!NavMesh.SamplePosition(transform.position, out NavMeshHit hit, sampleDistance, NavMesh.AllAreas))
+            return false;
+
+        if (_agent.enabled)
+            _agent.enabled = false;
+
+        transform.position = hit.position;
+        _agent.enabled = true;
+
+        return _agent.enabled && _agent.isOnNavMesh;
+    }
+
+    private void RecoverIfStuck()
+    {
+        if (CurrentState != EnemyState.Chase || PlayerTransform == null || _agent == null || !_agent.enabled)
+        {
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        if (!_agent.isOnNavMesh)
+        {
+            TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance);
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        if (_agent.pathPending || _agent.remainingDistance <= _agent.stoppingDistance + 0.2f)
+        {
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        float movedSqr = (transform.position - _lastStuckCheckPosition).sqrMagnitude;
+        if (movedSqr > StuckMoveThresholdSqr || _agent.velocity.sqrMagnitude > 0.01f)
+        {
+            _stuckTimer = 0f;
+            _lastStuckCheckPosition = transform.position;
+            return;
+        }
+
+        _stuckTimer += Time.deltaTime;
+        if (_stuckTimer < StuckRecoveryDelay)
+            return;
+
+        TryPlaceAgentOnNavMesh(NavMeshSpawnSampleDistance);
+        TrySetAgentDestination(PlayerTransform.position);
+        _stuckTimer = 0f;
+        _lastStuckCheckPosition = transform.position;
+    }
+
     private void ApplyExternalVelocity()
     {
         if (_externalVelocity.sqrMagnitude <= 0.0001f)
@@ -406,11 +594,54 @@ public class EnemyBase : MonoBehaviour
             return;
         }
 
-        if (_agent != null && _agent.enabled)
+        if (_agent != null && _agent.enabled && _agent.isOnNavMesh)
             _agent.Move(_externalVelocity * Time.deltaTime);
 
         float decay = _knockbackDecay > 0f ? _knockbackDecay : 18f;
         _externalVelocity = Vector3.MoveTowards(_externalVelocity, Vector3.zero, decay * Time.deltaTime);
+    }
+
+    private void CacheDeathCollisionColliders()
+    {
+        Collider[] colliders = GetComponentsInChildren<Collider>(true);
+        int collisionColliderCount = 0;
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider != null && !collider.isTrigger)
+                collisionColliderCount++;
+        }
+
+        _deathCollisionColliders = new Collider[collisionColliderCount];
+        _deathCollisionInitialEnabled = new bool[collisionColliderCount];
+
+        int index = 0;
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider == null || collider.isTrigger)
+                continue;
+
+            _deathCollisionColliders[index] = collider;
+            _deathCollisionInitialEnabled[index] = collider.enabled;
+            index++;
+        }
+    }
+
+    private void SetDeathCollisionEnabled(bool enabled)
+    {
+        if (_deathCollisionColliders == null)
+            CacheDeathCollisionColliders();
+
+        for (int i = 0; i < _deathCollisionColliders.Length; i++)
+        {
+            Collider collider = _deathCollisionColliders[i];
+            if (collider == null)
+                continue;
+
+            collider.enabled = enabled && _deathCollisionInitialEnabled[i];
+        }
     }
 
     private void TryDropLoot()
@@ -418,7 +649,11 @@ public class EnemyBase : MonoBehaviour
         if (_data == null || _data.PossibleDrops == null || _data.PossibleDrops.Length == 0)
             return;
 
-        if (Random.value > _data.DropChance)
+        float dropChance = _data.DropChance;
+        if (RunUpgradeManager.Current != null)
+            dropChance += RunUpgradeManager.Current.GetPickupDropChanceBonus();
+
+        if (Random.value > Mathf.Clamp01(dropChance))
             return;
 
         GameObject dropPrefab = _data.PossibleDrops[Random.Range(0, _data.PossibleDrops.Length)];
@@ -434,24 +669,23 @@ public class EnemyBase : MonoBehaviour
     private void EnsureRootHitboxes()
     {
         CapsuleCollider[] rootCapsules = GetComponents<CapsuleCollider>();
-        int activeRootCapsuleCount = 0;
+        float hitboxRadius = _data != null && _data.AgentRadius > 0f
+            ? Mathf.Max(MinimumHitboxRadius, _data.AgentRadius * HitboxRadiusMultiplier)
+            : FallbackHitboxRadius;
+        float hitboxHeight = _data != null && _data.AgentHeight > 0f
+            ? Mathf.Max(MinimumHitboxHeight, _data.AgentHeight * HitboxHeightMultiplier)
+            : FallbackHitboxHeight;
+        Vector3 hitboxCenter = new(0f, hitboxHeight * 0.5f, 0f);
 
         for (int i = 0; i < rootCapsules.Length; i++)
         {
             CapsuleCollider capsule = rootCapsules[i];
-            if (capsule != null && capsule.enabled && !capsule.isTrigger)
-                activeRootCapsuleCount++;
+            if (capsule != null && i > 0)
+                capsule.enabled = false;
         }
 
-        if (activeRootCapsuleCount >= 2)
-        {
-            EnsureRootBoxHitbox();
-            return;
-        }
-
-        EnsureCapsuleCollider(rootCapsules, 0, DefaultPrimaryHitboxRadius, DefaultPrimaryHitboxHeight, DefaultPrimaryHitboxCenter);
-        EnsureCapsuleCollider(rootCapsules, 1, DefaultSecondaryHitboxRadius, DefaultSecondaryHitboxHeight, DefaultSecondaryHitboxCenter);
-        EnsureRootBoxHitbox();
+        EnsureCapsuleCollider(rootCapsules, 0, hitboxRadius, hitboxHeight, hitboxCenter);
+        EnsureRootBoxHitbox(hitboxRadius, hitboxHeight);
     }
 
     private void EnsureCapsuleCollider(
@@ -476,7 +710,7 @@ public class EnemyBase : MonoBehaviour
         capsule.center = center;
     }
 
-    private void EnsureRootBoxHitbox()
+    private void EnsureRootBoxHitbox(float hitboxRadius, float hitboxHeight)
     {
         BoxCollider boxCollider = GetComponent<BoxCollider>();
         if (boxCollider == null)
@@ -484,8 +718,8 @@ public class EnemyBase : MonoBehaviour
 
         boxCollider.isTrigger = false;
         boxCollider.enabled = true;
-        boxCollider.center = DefaultBoxHitboxCenter;
-        boxCollider.size = DefaultBoxHitboxSize;
+        boxCollider.center = new Vector3(0f, hitboxHeight * 0.5f, 0f);
+        boxCollider.size = new Vector3(hitboxRadius * 2f, hitboxHeight, hitboxRadius * 2f);
     }
 
     private void EnsureEnemyIdentification()
@@ -519,7 +753,7 @@ public class EnemyBase : MonoBehaviour
         UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, _data.AggroRange);
 
         UnityEditor.Handles.color = new Color(1f, 0.2f, 0.2f, 0.15f);
-        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, _data.AttackRange);
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, CurrentAttack.AttackRange);
     }
 #endif
 }

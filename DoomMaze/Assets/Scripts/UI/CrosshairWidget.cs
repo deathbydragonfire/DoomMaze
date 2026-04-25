@@ -1,4 +1,5 @@
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -15,6 +16,13 @@ public class CrosshairWidget : MonoBehaviour
     [SerializeField] private float         _expandAmount     = 12f;
     [SerializeField] private float         _contractDuration = 0.15f;
 
+    [Header("Interact Hint")]
+    [SerializeField] private float _interactHintRange = 2.5f;
+    [SerializeField] private LayerMask _interactHintLayers = ~0;
+    [SerializeField] private Vector2 _interactHintOffset = new Vector2(0f, -54f);
+    [SerializeField] private float _interactHintFontSize = 24f;
+    [SerializeField] private Color _interactHintColor = new Color(1f, 0.88f, 0.45f, 1f);
+
     [Header("Flamethrower Heat Bar")]
     [SerializeField] private Vector2 _heatBarOffset = new Vector2(28f, 0f);
     [SerializeField] private Vector2 _heatBarSize = new Vector2(10f, 54f);
@@ -30,6 +38,8 @@ public class CrosshairWidget : MonoBehaviour
     private RawImage _heatBarBackgroundImage;
     private RawImage _heatBarFillImage;
     private PlayerCombat _playerCombat;
+    private Camera _camera;
+    private TextMeshProUGUI _interactHintLabel;
 
     private void Awake()
     {
@@ -37,13 +47,16 @@ public class CrosshairWidget : MonoBehaviour
             Debug.LogError("[CrosshairWidget] _crosshairRect is not assigned.");
 
         EnsureHeatBar();
+        EnsureInteractHint();
         SetHeatBarVisible(false);
+        SetInteractHintVisible(false);
     }
 
     private void Update()
     {
         ResolvePlayerCombat();
         UpdateFlamethrowerHeatBar();
+        UpdateInteractHint();
     }
 
     private void OnEnable()
@@ -175,9 +188,57 @@ public class CrosshairWidget : MonoBehaviour
         _heatBarFillImage.raycastTarget = false;
     }
 
+    private void EnsureInteractHint()
+    {
+        if (_crosshairRect == null || _interactHintLabel != null)
+            return;
+
+        TMP_FontAsset font = MenuFontUtility.ResolveMenuFont(transform);
+        _interactHintLabel = MenuFontUtility.CreateText(
+            "InteractHint",
+            _crosshairRect.parent,
+            "Press E to Interact",
+            font,
+            _interactHintFontSize,
+            TextAlignmentOptions.Center);
+
+        RectTransform hintRect = _interactHintLabel.transform as RectTransform;
+        hintRect.anchorMin = new Vector2(0.5f, 0.5f);
+        hintRect.anchorMax = new Vector2(0.5f, 0.5f);
+        hintRect.pivot = new Vector2(0.5f, 0.5f);
+        hintRect.anchoredPosition = _interactHintOffset;
+        hintRect.sizeDelta = new Vector2(420f, 42f);
+        _interactHintLabel.color = _interactHintColor;
+    }
+
+    private void UpdateInteractHint()
+    {
+        if (_interactHintLabel == null)
+            return;
+
+        if (_camera == null)
+            _camera = Camera.main;
+
+        bool canInteract = false;
+        if (_camera != null &&
+            Physics.Raycast(_camera.transform.position, _camera.transform.forward, out RaycastHit hit, _interactHintRange, _interactHintLayers))
+        {
+            IInteractable interactable = hit.collider.GetComponentInParent<IInteractable>();
+            canInteract = interactable != null && interactable.CanInteract;
+        }
+
+        SetInteractHintVisible(canInteract);
+    }
+
     private void SetHeatBarVisible(bool visible)
     {
         if (_heatBarRoot != null && _heatBarRoot.gameObject.activeSelf != visible)
             _heatBarRoot.gameObject.SetActive(visible);
+    }
+
+    private void SetInteractHintVisible(bool visible)
+    {
+        if (_interactHintLabel != null && _interactHintLabel.gameObject.activeSelf != visible)
+            _interactHintLabel.gameObject.SetActive(visible);
     }
 }

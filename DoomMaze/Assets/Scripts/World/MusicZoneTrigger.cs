@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -13,16 +14,28 @@ public class MusicZoneTrigger : MonoBehaviour
 
     private string _lastSelectedTrackId;
     private bool _hasPlayedStartupTrack;
+    private Coroutine _startupTrackCoroutine;
 
     private void OnEnable()
     {
         EventBus<GameStateChangedEvent>.Subscribe(OnGameStateChanged);
-        TryPlayStartupTrack();
+        QueueStartupTrackWhenReady();
     }
 
     private void OnDisable()
     {
         EventBus<GameStateChangedEvent>.Unsubscribe(OnGameStateChanged);
+
+        if (_startupTrackCoroutine != null)
+        {
+            StopCoroutine(_startupTrackCoroutine);
+            _startupTrackCoroutine = null;
+        }
+    }
+
+    private void Start()
+    {
+        QueueStartupTrackWhenReady();
     }
 
     private void OnTriggerEnter(Collider other)
@@ -52,6 +65,26 @@ public class MusicZoneTrigger : MonoBehaviour
     {
         if (e.NewState == GameState.Playing)
             TryPlayStartupTrack();
+    }
+
+    private void QueueStartupTrackWhenReady()
+    {
+        if (!_playRandomTrackOnStart || _hasPlayedStartupTrack || _startupTrackCoroutine != null)
+            return;
+
+        _startupTrackCoroutine = StartCoroutine(PlayStartupTrackWhenReady());
+    }
+
+    private IEnumerator PlayStartupTrackWhenReady()
+    {
+        while (!_hasPlayedStartupTrack &&
+               (GameManager.Instance == null || GameManager.Instance.CurrentState != GameState.Playing))
+        {
+            yield return null;
+        }
+
+        _startupTrackCoroutine = null;
+        TryPlayStartupTrack();
     }
 
     private void TryPlayStartupTrack()

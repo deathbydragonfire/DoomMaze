@@ -15,6 +15,8 @@ public class EnemySpriteBillboard : MonoBehaviour
     private const float MinimumHitboxHeight = 0.9f;
     private const float MinimumHitboxDepth = 0.6f;
 
+    [SerializeField] private bool _enableSpriteDamageCollider;
+
     private SpriteRenderer _spriteRenderer;
     private Camera _mainCamera;
     private EnemyData _data;
@@ -37,7 +39,7 @@ public class EnemySpriteBillboard : MonoBehaviour
             _damageCollider = gameObject.AddComponent<BoxCollider>();
 
         _damageCollider.isTrigger = false;
-        _damageCollider.enabled = true;
+        _damageCollider.enabled = _enableSpriteDamageCollider;
     }
 
     /// <summary>Injects the shared <see cref="EnemyData"/> reference from <see cref="EnemyBase"/>.</summary>
@@ -208,9 +210,16 @@ public class EnemySpriteBillboard : MonoBehaviour
         if (_damageCollider == null || _spriteRenderer == null || _spriteRenderer.sprite == null)
             return;
 
+        if (!_enableSpriteDamageCollider)
+        {
+            _damageCollider.enabled = false;
+            return;
+        }
+
         Bounds spriteBounds = _spriteRenderer.sprite.bounds;
         Vector3 size = spriteBounds.size;
 
+        _damageCollider.enabled = true;
         _damageCollider.center = spriteBounds.center;
         _damageCollider.size = new Vector3(
             Mathf.Max(size.x, MinimumHitboxWidth),

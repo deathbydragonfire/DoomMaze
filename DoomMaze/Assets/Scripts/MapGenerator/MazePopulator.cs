@@ -1,5 +1,11 @@
 using System.Collections.Generic;
+using TMPro;
+using Unity.AI.Navigation;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 using UnityEngine;
+using UnityEngine.AI;
 
 /// <summary>
 /// Consumes the tree produced by MapGenerator and instantiates room prefabs
@@ -9,6 +15,12 @@ using UnityEngine;
 [RequireComponent(typeof(MapGenerator))]
 public class MazePopulator : MonoBehaviour
 {
+    private const string MeleeEnemyPrefabPath = "Assets/Prefabs/Enemies/New Enemy Prefabs/Enemy_MeleeGrunt_NEw.prefab";
+    private const string RangedEnemyPrefabPath = "Assets/Prefabs/Enemies/New Enemy Prefabs/Enemy_RangedGrunt New.prefab";
+    private const string BossPrefabPath = "Assets/Prefabs/Enemies/Enemy_Boss.prefab";
+    private const string GeneratedDoorPrefabPath = "Assets/Prefabs/World/Door.prefab";
+    private const string RoomSplashFontPath = "Assets/Fonts/Unutterable_Font_1_07/TrueType (.ttf)/Unutterable-Regular SDF 1.asset";
+
     // -------------------------------------------------------------------------
     // Serialized prefab lists
     // -------------------------------------------------------------------------
@@ -46,6 +58,55 @@ public class MazePopulator : MonoBehaviour
              "even if some overlap, so a map is always produced.")]
     [SerializeField] [Range(0, 64)] private int maxFullRestarts = 35;
 
+    [Header("Procedural Enemy Rooms")]
+    [SerializeField] private GameObject meleeEnemyPrefab;
+    [SerializeField] private GameObject rangedEnemyPrefab;
+    [SerializeField] private GameObject bossPrefab;
+    [SerializeField] private Door generatedDoorPrefab;
+    [SerializeField] [Range(0f, 1f)] private float waveSurvivalRoomChance = 0.3f;
+    [SerializeField] private Vector3 generatedDoorScale = new(8f, 5f, 0.5f);
+    [SerializeField] private float generatedDoorVerticalOffset = 2.5f;
+
+    [Header("Room Splash")]
+    [SerializeField] private TMP_FontAsset roomSplashFont;
+
+    [Header("Eliminate All Defaults")]
+    [SerializeField] private int eliminateEnemyCount = 18;
+    [SerializeField] private int eliminateBossCount = 1;
+    [SerializeField] private float eliminateSpawnDuration = 8f;
+    [SerializeField] [Range(0f, 1f)] private float eliminateMeleeWeight = 0.85f;
+
+    [Header("Wave Survival Defaults")]
+    [SerializeField] private float waveDuration = 30f;
+    [SerializeField] private float waveSpawnInterval = 0.9f;
+    [SerializeField] private int waveMaxAlive = 14;
+    [SerializeField] [Range(0f, 1f)] private float waveMeleeWeight = 0.75f;
+
+    [Header("Upgrade Rooms")]
+    [SerializeField] private UpgradeDatabase upgradeDatabase;
+    [SerializeField] private UpgradePickup upgradePickupPrefab;
+    [SerializeField] private Vector3[] upgradeChoiceLocalOffsets =
+    {
+        new Vector3(-3f, 1.2f, 0f),
+        new Vector3(0f, 1.2f, 0f),
+        new Vector3(3f, 1.2f, 0f),
+    };
+    [SerializeField] private AudioClip upgradeRoomMusic;
+    [SerializeField] [Range(0f, 1f)] private float upgradeRoomMusicVolume = 0.85f;
+    [SerializeField] private float upgradeRoomMusicFadeOutDuration = 0.45f;
+    [SerializeField] private float upgradeRoomMusicFadeInDuration = 0.45f;
+    [SerializeField] private float upgradeRoomMusicFadeOutOnExitDuration = 0.35f;
+
+    [Header("Runtime NavMesh")]
+    [SerializeField] private bool buildRuntimeNavMesh = false;
+    [SerializeField] private LayerMask navMeshLayerMask = ~0;
+
+    [Header("Player Start")]
+    [SerializeField] private bool placePlayerInStartRoom = true;
+    [SerializeField] private Vector3 playerStartLocalOffset = new(0f, -8f, 0f);
+    [SerializeField] private float playerStartNavMeshSearchRadius = 6f;
+    [SerializeField] private float playerStartGroundOffset = 1f;
+
     // -------------------------------------------------------------------------
     // Internal layout types
     // -------------------------------------------------------------------------
@@ -61,6 +122,35 @@ public class MazePopulator : MonoBehaviour
         public MapGenerator.RoomNode Node; // null for injected connectors
     }
 
+    public readonly struct GeneratedRoomPlacement
+    {
+        public readonly GameObject Instance;
+        public readonly MazePrefab Prefab;
+        public readonly MapGenerator.RoomType Type;
+        public readonly bool HasNodeType;
+        public readonly Vector3 Position;
+        public readonly Quaternion Rotation;
+        public readonly Bounds Bounds;
+
+        public GeneratedRoomPlacement(
+            GameObject instance,
+            MazePrefab prefab,
+            MapGenerator.RoomType type,
+            bool hasNodeType,
+            Vector3 position,
+            Quaternion rotation,
+            Bounds bounds)
+        {
+            Instance = instance;
+            Prefab = prefab;
+            Type = type;
+            HasNodeType = hasNodeType;
+            Position = position;
+            Rotation = rotation;
+            Bounds = bounds;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Runtime state
     // -------------------------------------------------------------------------
@@ -68,6 +158,9 @@ public class MazePopulator : MonoBehaviour
     private MapGenerator              _generator;
     private readonly List<GameObject> _spawnedRooms = new();
     private readonly List<PlacedRoom> _placedRooms  = new();
+    private readonly List<(GameObject instance, PlacedRoom placed)> _spawnedRoomRecords = new();
+    private readonly List<GeneratedRoomPlacement> _generatedRooms = new();
+    private NavMeshSurface _runtimeNavMeshSurface;
 
     // -------------------------------------------------------------------------
     // Unity lifecycle
@@ -132,6 +225,22 @@ public class MazePopulator : MonoBehaviour
         // Phase 2 — instantiate everything.
         foreach (PlacedRoom placed in _placedRooms)
             InstantiateRoom(placed, parent);
+
+        ResolveProceduralRoomReferences();
+        BuildRuntimeNavMesh();
+        ConfigureGeneratedEnemyRooms();
+        ConfigureGeneratedBossRooms();
+        ConfigureGeneratedUpgradeRooms();
+        if (PlacePlayerAtStartRoom(out Vector3 playerStartPosition))
+            ArmEnemyRoomsFromPlayerStart(playerStartPosition);
+        else
+            ArmEnemyRoomsFromCurrentPlayer();
+
+        DecayWallController decayWallController = GetComponent<DecayWallController>();
+        if (decayWallController != null && decayWallController.DecayEnabled)
+            decayWallController.InitializeFromPopulator(this);
+
+        EventBus<MazePopulatedEvent>.Raise(new MazePopulatedEvent { Populator = this });
     }
 
     /// <summary>Destroys all rooms spawned by this populator.</summary>
@@ -141,6 +250,8 @@ public class MazePopulator : MonoBehaviour
             if (room != null) DestroyImmediate(room);
 
         _spawnedRooms.Clear();
+        _spawnedRoomRecords.Clear();
+        _generatedRooms.Clear();
         _placedRooms.Clear();
     }
 
@@ -429,6 +540,279 @@ public class MazePopulator : MonoBehaviour
         GameObject instance = Object.Instantiate(placed.Prefab.gameObject, parent);
         instance.transform.SetPositionAndRotation(placed.Position, placed.Rotation);
         _spawnedRooms.Add(instance);
+        _spawnedRoomRecords.Add((instance, placed));
+
+        Bounds bounds = TryGetWorldBounds(instance, out Bounds worldBounds)
+            ? worldBounds
+            : new Bounds(placed.Position, Vector3.one);
+
+        bool hasNodeType = placed.Node != null;
+        MapGenerator.RoomType type = hasNodeType ? placed.Node.Type : MapGenerator.RoomType.Hallway;
+        _generatedRooms.Add(new GeneratedRoomPlacement(
+            instance,
+            placed.Prefab,
+            type,
+            hasNodeType,
+            placed.Position,
+            placed.Rotation,
+            bounds));
+    }
+
+    private void BuildRuntimeNavMesh()
+    {
+        if (!buildRuntimeNavMesh)
+            return;
+
+        if (_runtimeNavMeshSurface == null)
+        {
+            _runtimeNavMeshSurface = GetComponent<NavMeshSurface>();
+            if (_runtimeNavMeshSurface == null)
+                _runtimeNavMeshSurface = gameObject.AddComponent<NavMeshSurface>();
+        }
+
+        _runtimeNavMeshSurface.collectObjects = CollectObjects.Children;
+        _runtimeNavMeshSurface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
+        _runtimeNavMeshSurface.layerMask = navMeshLayerMask;
+        _runtimeNavMeshSurface.ignoreNavMeshAgent = true;
+        _runtimeNavMeshSurface.ignoreNavMeshObstacle = true;
+        _runtimeNavMeshSurface.BuildNavMesh();
+    }
+
+    private void ResolveProceduralRoomReferences()
+    {
+#if UNITY_EDITOR
+        if (meleeEnemyPrefab == null)
+            meleeEnemyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(MeleeEnemyPrefabPath);
+
+        if (rangedEnemyPrefab == null)
+            rangedEnemyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(RangedEnemyPrefabPath);
+
+        if (bossPrefab == null)
+            bossPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BossPrefabPath);
+
+        if (generatedDoorPrefab == null)
+            generatedDoorPrefab = AssetDatabase.LoadAssetAtPath<Door>(GeneratedDoorPrefabPath);
+
+        if (roomSplashFont == null)
+            roomSplashFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(RoomSplashFontPath);
+#endif
+    }
+
+    private void ConfigureGeneratedEnemyRooms()
+    {
+        float enemySpawnRateMultiplier = Mathf.Max(0.01f, GameDifficultyManager.CurrentProfile.EnemySpawnRateMultiplier);
+        float scaledEliminateSpawnDuration = eliminateSpawnDuration / enemySpawnRateMultiplier;
+        float scaledWaveSpawnInterval = waveSpawnInterval / enemySpawnRateMultiplier;
+
+        foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
+        {
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Enemy)
+                continue;
+
+            EnemyRoomController controller = instance.GetComponent<EnemyRoomController>();
+            if (controller == null)
+                controller = instance.AddComponent<EnemyRoomController>();
+
+            EnemyRoomObjective objective = Random.value < waveSurvivalRoomChance
+                ? EnemyRoomObjective.WaveSurvival
+                : EnemyRoomObjective.EliminateAll;
+
+            controller.Configure(
+                placed.Prefab,
+                objective,
+                meleeEnemyPrefab,
+                rangedEnemyPrefab,
+                generatedDoorPrefab,
+                generatedDoorScale,
+                generatedDoorVerticalOffset,
+                roomSplashFont,
+                eliminateEnemyCount,
+                scaledEliminateSpawnDuration,
+                eliminateMeleeWeight,
+                waveDuration,
+                scaledWaveSpawnInterval,
+                waveMaxAlive,
+                waveMeleeWeight);
+        }
+    }
+
+    private void ConfigureGeneratedBossRooms()
+    {
+        foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
+        {
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Boss)
+                continue;
+
+            BossRoomController controller = instance.GetComponent<BossRoomController>();
+            if (controller == null)
+                controller = instance.AddComponent<BossRoomController>();
+
+            BossRoomObjective objective = BossRoomObjective.EliminateAll;
+
+            controller.Configure(
+                placed.Prefab,
+                objective,
+                bossPrefab,
+                generatedDoorPrefab,
+                generatedDoorScale,
+                generatedDoorVerticalOffset,
+                roomSplashFont,
+                eliminateBossCount);
+        }
+    }
+
+    private void ConfigureGeneratedUpgradeRooms()
+    {
+        foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
+        {
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Upgrade)
+                continue;
+
+            UpgradeRoomController controller = instance.GetComponent<UpgradeRoomController>();
+            if (controller == null)
+                controller = instance.AddComponent<UpgradeRoomController>();
+
+            controller.Configure(upgradeDatabase, upgradePickupPrefab, upgradeChoiceLocalOffsets);
+            controller.ConfigureMusic(
+                upgradeRoomMusic,
+                upgradeRoomMusicVolume,
+                upgradeRoomMusicFadeOutDuration,
+                upgradeRoomMusicFadeInDuration,
+                upgradeRoomMusicFadeOutOnExitDuration);
+        }
+    }
+
+    private bool PlacePlayerAtStartRoom(out Vector3 playerStartPosition)
+    {
+        playerStartPosition = default;
+
+        if (!placePlayerInStartRoom)
+            return false;
+
+        foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
+        {
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Start)
+                continue;
+
+            GameObject player = GameObject.FindWithTag("Player");
+            if (player == null)
+                return false;
+
+            Vector3 startPosition = instance.transform.TransformPoint(playerStartLocalOffset);
+            if (TrySampleNavMeshInsideRoom(instance, startPosition, playerStartNavMeshSearchRadius, out Vector3 sampledStart))
+                startPosition = sampledStart + Vector3.up * playerStartGroundOffset;
+
+            Quaternion startRotation = instance.transform.rotation;
+
+            PlayerMovement movement = player.GetComponent<PlayerMovement>();
+            if (movement != null)
+                movement.TeleportTo(startPosition, startRotation);
+            else
+                player.transform.SetPositionAndRotation(startPosition, startRotation);
+
+            playerStartPosition = startPosition;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ArmEnemyRoomsFromPlayerStart(Vector3 playerStartPosition)
+    {
+        foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
+        {
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Enemy)
+                continue;
+
+            EnemyRoomController controller = instance.GetComponent<EnemyRoomController>();
+            if (controller != null)
+                controller.ArmFromPlayerStart(playerStartPosition);
+        }
+    }
+
+    private void ArmEnemyRoomsFromCurrentPlayer()
+    {
+        GameObject player = GameObject.FindWithTag("Player");
+        if (player == null)
+            return;
+
+        ArmEnemyRoomsFromPlayerStart(player.transform.position);
+    }
+
+    private static bool TrySampleNavMeshInsideRoom(GameObject room, Vector3 target, float radius, out Vector3 sampledPosition)
+    {
+        sampledPosition = default;
+
+        if (room == null)
+            return false;
+
+        if (!TryGetWorldBounds(room, out Bounds roomBounds))
+            return false;
+
+        float searchRadius = Mathf.Max(0.5f, radius);
+        if (!NavMesh.SamplePosition(target, out NavMeshHit hit, searchRadius, NavMesh.AllAreas))
+            return false;
+
+        if (!IsInsideBoundsXZ(roomBounds, hit.position))
+            return false;
+
+        sampledPosition = hit.position;
+        return true;
+    }
+
+    private static bool TryGetWorldBounds(GameObject root, out Bounds bounds)
+    {
+        bool hasBounds = false;
+        bounds = new Bounds(root.transform.position, Vector3.zero);
+
+        Collider[] colliders = root.GetComponentsInChildren<Collider>();
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider == null || collider.isTrigger)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = collider.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(collider.bounds);
+            }
+        }
+
+        if (hasBounds)
+            return true;
+
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>();
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = renderer.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(renderer.bounds);
+            }
+        }
+
+        return hasBounds;
+    }
+
+    private static bool IsInsideBoundsXZ(Bounds bounds, Vector3 position)
+    {
+        return position.x >= bounds.min.x &&
+               position.x <= bounds.max.x &&
+               position.z >= bounds.min.z &&
+               position.z <= bounds.max.z;
     }
 
     // -------------------------------------------------------------------------
@@ -580,6 +964,8 @@ public class MazePopulator : MonoBehaviour
 
     /// <summary>Total number of rooms (including injected connectors) in the current layout.</summary>
     public int PlacedRoomCount => _placedRooms.Count;
+
+    public IReadOnlyList<GeneratedRoomPlacement> GeneratedRooms => _generatedRooms;
 
     /// <summary>
     /// Returns true if at least one placed room has the given node type and its

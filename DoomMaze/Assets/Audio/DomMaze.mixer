@@ -82,9 +82,9 @@ AudioMixerController:
   - guid: 45e1d10f7607f244db9c99536afbea13
     name: MusicVolume
   - guid: 18c812ec4ec6ec742ae060ef15ae6a24
-    name: SFXVolume
+    name: GameplayVolume
   - guid: b4d78212c16c1c848a52cbd586b75747
-    name: MyExposedParam
+    name: UiVolume
   m_AudioMixerGroupViews:
   - guids:
     - 9365b3cc2d4b1694489001ea4a28769e

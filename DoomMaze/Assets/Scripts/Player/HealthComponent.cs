@@ -58,7 +58,7 @@ public class HealthComponent : MonoBehaviour, IDamageable
             return;
         }
 
-        if (!IsAlive || IsInvulnerable)
+        if (!IsAlive || (IsInvulnerable && !info.IgnoreInvulnerability))
             return;
 
         // Armor mitigation (player only has ArmorComponent by default)
@@ -92,7 +92,7 @@ public class HealthComponent : MonoBehaviour, IDamageable
         {
             Die();
         }
-        else if (_isPlayer)
+        else if (_isPlayer && !info.IgnoreInvulnerability)
         {
             StartCoroutine(InvulnerabilityRoutine());
         }
@@ -142,9 +142,10 @@ public class HealthComponent : MonoBehaviour, IDamageable
     /// <summary>Resets HP and alive state back to full.</summary>
     public void ResetHealth()
     {
-        CurrentHealth = _maxHealth;
-        IsAlive       = true;
-        _wasLowHealth = false;
+        CurrentHealth    = _maxHealth;
+        IsAlive          = true;
+        IsInvulnerable   = false;
+        _wasLowHealth    = false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ public class ObjectPool<T> where T : Component
     private readonly T         _prefab;
     private readonly Transform _parent;
     private readonly Stack<T>  _available = new Stack<T>();
+    private readonly HashSet<T> _availableSet = new HashSet<T>();
     private readonly List<T>   _allInstances = new List<T>();
 
     // ── Constructor ───────────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ public class ObjectPool<T> where T : Component
         _parent = parent;
 
         for (int i = 0; i < initialSize; i++)
-            CreateInstance();
+            CreateInstance(addToAvailable: true);
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -46,7 +47,19 @@ public class ObjectPool<T> where T : Component
     /// </summary>
     public T Get(Vector3 position, Quaternion rotation)
     {
-        T instance = _available.Count > 0 ? _available.Pop() : CreateInstance();
+        T instance = null;
+
+        while (_available.Count > 0 && instance == null)
+        {
+            T candidate = _available.Pop();
+            _availableSet.Remove(candidate);
+
+            if (candidate != null && !candidate.gameObject.activeSelf)
+                instance = candidate;
+        }
+
+        if (instance == null)
+            instance = CreateInstance(addToAvailable: false);
 
         Transform t = instance.transform;
         t.position = position;
@@ -70,8 +83,12 @@ public class ObjectPool<T> where T : Component
             return;
         }
 
+        if (_availableSet.Contains(instance))
+            return;
+
         instance.gameObject.SetActive(false);
         _available.Push(instance);
+        _availableSet.Add(instance);
     }
 
     /// <summary>Returns all currently active instances to the pool.</summary>
@@ -86,12 +103,18 @@ public class ObjectPool<T> where T : Component
 
     // ── Internal ──────────────────────────────────────────────────────────────
 
-    private T CreateInstance()
+    private T CreateInstance(bool addToAvailable)
     {
         T instance = Object.Instantiate(_prefab, _parent);
         instance.gameObject.SetActive(false);
         _allInstances.Add(instance);
-        _available.Push(instance);
+
+        if (addToAvailable)
+        {
+            _available.Push(instance);
+            _availableSet.Add(instance);
+        }
+
         return instance;
     }
 }

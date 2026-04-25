@@ -138,6 +138,7 @@ public class PlayerCombat : MonoBehaviour
     {
         EventBus<GameStateChangedEvent>.Subscribe(OnGameStateChanged);
         EventBus<EnemyDiedEvent>.Subscribe(OnEnemyDied);
+        EventBus<UpgradeCollectedEvent>.Subscribe(OnUpgradeCollected);
         TryBindInput();
         RaiseSuperMeterChanged();
     }
@@ -146,6 +147,7 @@ public class PlayerCombat : MonoBehaviour
     {
         EventBus<GameStateChangedEvent>.Unsubscribe(OnGameStateChanged);
         EventBus<EnemyDiedEvent>.Unsubscribe(OnEnemyDied);
+        EventBus<UpgradeCollectedEvent>.Unsubscribe(OnUpgradeCollected);
         UnbindInput();
 
         if (_superRoutine != null)
@@ -282,6 +284,18 @@ public class PlayerCombat : MonoBehaviour
             return;
 
         _superKillCharge = Mathf.Min(_superKillCharge + 1, GetKillsRequiredForSuper());
+        RaiseSuperMeterChanged();
+    }
+
+    private void OnUpgradeCollected(UpgradeCollectedEvent e)
+    {
+        _superKillCharge = Mathf.Min(_superKillCharge, GetKillsRequiredForSuper());
+        RaiseSuperMeterChanged();
+    }
+
+    public void FillSuperMeter()
+    {
+        _superKillCharge = GetKillsRequiredForSuper();
         RaiseSuperMeterChanged();
     }
 
@@ -916,7 +930,11 @@ public class PlayerCombat : MonoBehaviour
 
     private int GetKillsRequiredForSuper()
     {
-        return Mathf.Max(1, _killsRequiredForSuper);
+        int reduction = RunUpgradeManager.Current != null
+            ? RunUpgradeManager.Current.GetSuperKillRequirementReduction()
+            : 0;
+
+        return Mathf.Max(1, _killsRequiredForSuper - reduction);
     }
 
     private float GetSuperDamage()

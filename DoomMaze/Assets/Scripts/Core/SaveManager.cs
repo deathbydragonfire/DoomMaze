@@ -92,6 +92,7 @@ public class SaveManager : MonoBehaviour
             }
 
             CurrentSave = new SaveData();
+            EventBus<RunResetEvent>.Raise(new RunResetEvent());
         }
         catch (System.Exception ex)
         {
@@ -114,6 +115,11 @@ public class SaveManager : MonoBehaviour
     {
         try
         {
+            if (CurrentSettings == null)
+                CurrentSettings = new SettingsData();
+
+            CurrentSettings.Normalize();
+
             string json = JsonUtility.ToJson(CurrentSettings, prettyPrint: true);
             File.WriteAllText(SettingsFilePath, json);
         }
@@ -129,6 +135,7 @@ public class SaveManager : MonoBehaviour
         if (!File.Exists(SettingsFilePath))
         {
             CurrentSettings = new SettingsData();
+            CurrentSettings.Normalize();
             return;
         }
 
@@ -136,11 +143,20 @@ public class SaveManager : MonoBehaviour
         {
             string json = File.ReadAllText(SettingsFilePath);
             CurrentSettings = JsonUtility.FromJson<SettingsData>(json);
+            if (CurrentSettings == null)
+                CurrentSettings = new SettingsData();
+
+            bool shouldSaveMigratedSettings = CurrentSettings.SettingsVersion < SettingsData.CurrentVersion;
+            CurrentSettings.Normalize();
+
+            if (shouldSaveMigratedSettings)
+                SaveSettings();
         }
         catch (System.Exception ex)
         {
             Debug.LogError($"[SaveManager] Failed to read settings file: {ex.Message}");
             CurrentSettings = new SettingsData();
+            CurrentSettings.Normalize();
         }
     }
 }

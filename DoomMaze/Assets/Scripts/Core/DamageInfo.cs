@@ -13,4 +13,6 @@ public struct DamageInfo
     public float      Amount;
     public DamageType Type;
     public GameObject Source;
+    public bool       IgnoreInvulnerability;
+    public bool       IgnoreArmor;
 }

@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 
 /// <summary>
@@ -8,6 +9,7 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
 {
     [SerializeField] private GameObject _deathPanel;
     [SerializeField] private GameObject _victoryPanel;
+    [SerializeField] private TMP_FontAsset _menuFont;
     [Header("UI Audio")]
     [SerializeField] private AudioClip[] _hoverSounds;
     [Range(0f, 1f)] [SerializeField] private float _hoverSoundVolume = 1f;
@@ -20,6 +22,7 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
         if (_victoryPanel == null) Debug.LogError("[GameOverController] _victoryPanel is not assigned.");
 
         MenuButtonHoverEffect.AttachToButtons(transform);
+        ApplyMenuFont();
         SetPanelsActive(false, false);
     }
 
@@ -51,6 +54,7 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
     {
         if (_deathPanel   != null) _deathPanel.SetActive(death);
         if (_victoryPanel != null) _victoryPanel.SetActive(victory);
+        ApplyMenuFont();
     }
 
     /// <summary>Reloads the current scene to restart the game.</summary>
@@ -75,5 +79,11 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
     private void PlayClickSound()
     {
         AudioManager.Instance?.PlayUi(_clickSounds, _clickSoundVolume);
+    }
+
+    private void ApplyMenuFont()
+    {
+        _menuFont = MenuFontUtility.ResolveMenuFont(transform, _menuFont);
+        MenuFontUtility.ApplyFont(transform, _menuFont);
     }
 }

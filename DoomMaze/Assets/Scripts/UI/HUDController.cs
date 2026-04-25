@@ -15,10 +15,12 @@ public class HUDController : MonoBehaviour
     [SerializeField] private PickupFeedWidget  _pickupFeedWidget;
     [SerializeField] private DamageFlashWidget _damageFlashWidget;
     [SerializeField] private SuperMeterWidget  _superMeterWidget;
+    [SerializeField] private DecayMeterWidget  _decayMeterWidget;
 
     private Canvas          _canvas;
     private PlayerCombat    _playerCombat;
     private PlayerInventory _playerInventory;
+    private PlayerDecayComponent _playerDecay;
     private bool            _isGameStateVisible = true;
     private bool?           _localVisibilityOverride;
 
@@ -36,6 +38,7 @@ public class HUDController : MonoBehaviour
         if (_damageFlashWidget == null) Debug.LogError("[HUDController] _damageFlashWidget is not assigned.");
         if (_superMeterWidget == null) Debug.LogError("[HUDController] _superMeterWidget is not assigned.");
 
+        EnsureDecayMeterWidget();
         RefreshCanvasVisibility();
     }
 
@@ -51,6 +54,7 @@ public class HUDController : MonoBehaviour
         EventBus<PlayerLowHealthEvent>.Subscribe(OnLowHealth);
         EventBus<GameStateChangedEvent>.Subscribe(OnGameStateChanged);
         EventBus<SuperMeterChangedEvent>.Subscribe(OnSuperMeterChanged);
+        EventBus<PlayerDecayChangedEvent>.Subscribe(OnPlayerDecayChanged);
     }
 
     private void OnDisable()
@@ -65,11 +69,13 @@ public class HUDController : MonoBehaviour
         EventBus<PlayerLowHealthEvent>.Unsubscribe(OnLowHealth);
         EventBus<GameStateChangedEvent>.Unsubscribe(OnGameStateChanged);
         EventBus<SuperMeterChangedEvent>.Unsubscribe(OnSuperMeterChanged);
+        EventBus<PlayerDecayChangedEvent>.Unsubscribe(OnPlayerDecayChanged);
     }
 
     private void Start()
     {
         RefreshSuperMeter();
+        RefreshDecayMeter();
     }
 
     public void SetLocalVisibilityOverride(bool isVisible)
@@ -138,6 +144,11 @@ public class HUDController : MonoBehaviour
         _superMeterWidget?.SetValue(e.ChargeNormalized, e.CurrentCharges, e.ChargesRequired, e.IsReady);
     }
 
+    public void OnPlayerDecayChanged(PlayerDecayChangedEvent e)
+    {
+        _decayMeterWidget?.SetValue(e.DecayNormalized);
+    }
+
     /// <summary>Shows or hides the entire HUD based on the current game state.</summary>
     public void OnGameStateChanged(GameStateChangedEvent e)
     {
@@ -147,7 +158,7 @@ public class HUDController : MonoBehaviour
 
     private void ResolvePlayerReferences()
     {
-        if (_playerCombat != null && _playerInventory != null)
+        if (_playerCombat != null && _playerInventory != null && _playerDecay != null)
             return;
 
         GameObject player = GameObject.FindWithTag("Player");
@@ -156,6 +167,7 @@ public class HUDController : MonoBehaviour
 
         _playerCombat    = player.GetComponent<PlayerCombat>();
         _playerInventory = player.GetComponent<PlayerInventory>();
+        _playerDecay     = player.GetComponentInParent<PlayerDecayComponent>();
     }
 
     private void RefreshActiveWeaponAmmo()
@@ -186,6 +198,33 @@ public class HUDController : MonoBehaviour
             _playerCombat.SuperKillCharge,
             _playerCombat.SuperKillsRequired,
             _playerCombat.IsSuperReady);
+    }
+
+    private void RefreshDecayMeter()
+    {
+        EnsureDecayMeterWidget();
+        ResolvePlayerReferences();
+
+        if (_playerDecay != null)
+            _decayMeterWidget?.SetValue(_playerDecay.DecayNormalized);
+        else
+            _decayMeterWidget?.SetValue(1f);
+    }
+
+    private void EnsureDecayMeterWidget()
+    {
+        if (_decayMeterWidget != null)
+            return;
+
+        RectTransform healthRect = _healthWidget != null ? _healthWidget.transform as RectTransform : null;
+        Transform parent = healthRect != null ? healthRect.parent : transform;
+
+        GameObject meterObject = new GameObject("DecayMeterWidget", typeof(RectTransform), typeof(DecayMeterWidget));
+        meterObject.transform.SetParent(parent, false);
+
+        _decayMeterWidget = meterObject.GetComponent<DecayMeterWidget>();
+        _decayMeterWidget.ConfigureRuntimeLayout(healthRect);
+        _decayMeterWidget.SetValue(1f);
     }
 
     private void RefreshCanvasVisibility()

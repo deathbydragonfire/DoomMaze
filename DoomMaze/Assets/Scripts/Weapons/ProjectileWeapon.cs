@@ -41,7 +41,7 @@ public class ProjectileWeapon : WeaponBase
         Camera cam = Camera.main;
         if (cam == null) return;
 
-        float launchRange = _data != null && _data.Range > 0f ? _data.Range : 80f;
+        float launchRange = GetRange() > 0f ? GetRange() : 80f;
         Vector3 origin = cam.transform.position + cam.transform.forward * GetSpawnDistance();
         Vector3 direction = cam.transform.forward;
 
@@ -56,7 +56,11 @@ public class ProjectileWeapon : WeaponBase
 
         Rocket rocket = _rocketPool.Get(origin, rotation);
         rocket.Init(_rocketPool);
-        rocket.Launch(transform.root.gameObject, direction, _data != null ? _data.Damage : 0f, launchRange, _hitMask);
+        float explosionRadiusMultiplier = RunUpgradeManager.Current != null
+            ? RunUpgradeManager.Current.GetRocketExplosionRadiusMultiplier()
+            : 1f;
+
+        rocket.Launch(transform.root.gameObject, direction, GetDamage(), launchRange, _hitMask, explosionRadiusMultiplier);
 
         if (_data != null)
             EventBus<CameraShakeEvent>.Raise(new CameraShakeEvent
