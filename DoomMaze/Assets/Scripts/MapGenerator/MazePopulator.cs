@@ -17,6 +17,7 @@ public class MazePopulator : MonoBehaviour
 {
     private const string MeleeEnemyPrefabPath = "Assets/Prefabs/Enemies/New Enemy Prefabs/Enemy_MeleeGrunt_NEw.prefab";
     private const string RangedEnemyPrefabPath = "Assets/Prefabs/Enemies/New Enemy Prefabs/Enemy_RangedGrunt New.prefab";
+    private const string BossPrefabPath = "Assets/Prefabs/Enemies/Enemy_Boss.prefab";
     private const string GeneratedDoorPrefabPath = "Assets/Prefabs/World/Door.prefab";
     private const string RoomSplashFontPath = "Assets/Fonts/Unutterable_Font_1_07/TrueType (.ttf)/Unutterable-Regular SDF 1.asset";
 
@@ -60,6 +61,7 @@ public class MazePopulator : MonoBehaviour
     [Header("Procedural Enemy Rooms")]
     [SerializeField] private GameObject meleeEnemyPrefab;
     [SerializeField] private GameObject rangedEnemyPrefab;
+    [SerializeField] private GameObject bossPrefab;
     [SerializeField] private Door generatedDoorPrefab;
     [SerializeField] [Range(0f, 1f)] private float waveSurvivalRoomChance = 0.3f;
     [SerializeField] private Vector3 generatedDoorScale = new(8f, 5f, 0.5f);
@@ -70,6 +72,7 @@ public class MazePopulator : MonoBehaviour
 
     [Header("Eliminate All Defaults")]
     [SerializeField] private int eliminateEnemyCount = 18;
+    [SerializeField] private int eliminateBossCount = 1;
     [SerializeField] private float eliminateSpawnDuration = 8f;
     [SerializeField] [Range(0f, 1f)] private float eliminateMeleeWeight = 0.85f;
 
@@ -226,6 +229,7 @@ public class MazePopulator : MonoBehaviour
         ResolveProceduralRoomReferences();
         BuildRuntimeNavMesh();
         ConfigureGeneratedEnemyRooms();
+        ConfigureGeneratedBossRooms();
         ConfigureGeneratedUpgradeRooms();
         if (PlacePlayerAtStartRoom(out Vector3 playerStartPosition))
             ArmEnemyRoomsFromPlayerStart(playerStartPosition);
@@ -583,6 +587,9 @@ public class MazePopulator : MonoBehaviour
         if (rangedEnemyPrefab == null)
             rangedEnemyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(RangedEnemyPrefabPath);
 
+        if (bossPrefab == null)
+            bossPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BossPrefabPath);
+
         if (generatedDoorPrefab == null)
             generatedDoorPrefab = AssetDatabase.LoadAssetAtPath<Door>(GeneratedDoorPrefabPath);
 
@@ -626,6 +633,31 @@ public class MazePopulator : MonoBehaviour
                 scaledWaveSpawnInterval,
                 waveMaxAlive,
                 waveMeleeWeight);
+        }
+    }
+
+    private void ConfigureGeneratedBossRooms()
+    {
+        foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
+        {
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Boss)
+                continue;
+
+            BossRoomController controller = instance.GetComponent<BossRoomController>();
+            if (controller == null)
+                controller = instance.AddComponent<BossRoomController>();
+
+            BossRoomObjective objective = BossRoomObjective.EliminateAll;
+
+            controller.Configure(
+                placed.Prefab,
+                objective,
+                bossPrefab,
+                generatedDoorPrefab,
+                generatedDoorScale,
+                generatedDoorVerticalOffset,
+                roomSplashFont,
+                eliminateBossCount);
         }
     }
 

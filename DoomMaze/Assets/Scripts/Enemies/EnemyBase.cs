@@ -350,6 +350,7 @@ public class EnemyBase : MonoBehaviour
                 _alertTimer = AlertDwellTime;
                 _isShowingWalkAnimation = false;
                 _billboard?.SetAnimation(_data?.IdleSprites);
+                CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
 
