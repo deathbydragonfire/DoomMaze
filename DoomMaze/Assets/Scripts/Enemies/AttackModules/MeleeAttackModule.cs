@@ -1,19 +1,5 @@
 using UnityEngine;
 
-/// <summary>
-/// Contract for all attack behaviours composed onto <see cref="EnemyBase"/>.
-/// Define additional implementations alongside this interface rather than creating new files
-/// until the attack module count exceeds two, at which point extract to /Assets/Scripts/Core/.
-/// </summary>
-public interface IAttackModule
-{
-    /// <summary>Called by <see cref="EnemyBase"/> when transitioning into the Attack state.</summary>
-    void OnAttackEnter();
-
-    /// <summary>Called by <see cref="EnemyBase"/> each Update tick while in the Attack state.</summary>
-    void Tick();
-}
-
 /// <summary>Implemented by attack modules that trigger their own attack animations.</summary>
 public interface IManualAttackAnimationModule { }
 
@@ -23,8 +9,31 @@ public interface IManualAttackAnimationModule { }
 /// </summary>
 public class MeleeAttackModule : MonoBehaviour, IAttackModule
 {
+    [SerializeField] private float _attackRange = 2;
+    [SerializeField] private float _attackDamage = 15;
+    [SerializeField] private float _attackRate = 1;
+    [SerializeField] private DamageType _attackDamageType = DamageType.Physical;
+
+    // ── IAttackModule ───────────────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public float AttackRange => _attackRange;         // Distance at which enemy can attack
+
+    /// <inheritdoc/>
+    public float AttackDamage => _attackDamage;
+
+    /// <inheritdoc/>
+    public float AttackRate => _attackRate;          // Attacks per second
+
+    /// <inheritdoc/>
+    public DamageType AttackDamageType => _attackDamageType;
+
+    // ── Constants ───────────────────────────────────────────────────────────────
+
     private const float ATTACK_HEIGHT_OFFSET = 0.9f;
     private const float ATTACK_FORWARD_BIAS  = 0.45f;
+
+    // ── Cached references ─────────────────────────────────────────────────────
 
     private EnemyData   _data;
     private EnemyBase   _enemyBase;
@@ -32,6 +41,8 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     private Collider    _playerCollider;
     private IDamageable _playerDamageable;
     private float       _attackTimer;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void Awake()
     {
@@ -48,6 +59,8 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
 
         CachePlayerReferences(logWarnings: true);
     }
+
+    // ── IAttackModule implementation ────────────────────────────────────────────────
 
     /// <inheritdoc/>
     public void OnAttackEnter()
@@ -67,7 +80,7 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
         if (_attackTimer <= 0f)
         {
             PerformAttack();
-            _attackTimer = 1f / _data.AttackRate;
+            _attackTimer = 1f / AttackRate;
         }
     }
 
@@ -84,8 +97,8 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
 
         _playerDamageable.TakeDamage(new DamageInfo
         {
-            Amount = _data.AttackDamage,
-            Type   = _data.AttackDamageType,
+            Amount = AttackDamage,
+            Type   = AttackDamageType,
             Source = gameObject
         });
 
@@ -124,14 +137,14 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
         toPlayer.y = 0f;
 
         if (toPlayer.sqrMagnitude > 0.0001f)
-            attackOrigin += toPlayer.normalized * Mathf.Min(ATTACK_FORWARD_BIAS, _data.AttackRange * 0.5f);
+            attackOrigin += toPlayer.normalized * Mathf.Min(ATTACK_FORWARD_BIAS, AttackRange * 0.5f);
 
         return attackOrigin;
     }
 
     private bool IsPlayerInRange(Vector3 attackOrigin)
     {
-        float attackRangeSqr = _data.AttackRange * _data.AttackRange;
+        float attackRangeSqr = AttackRange * AttackRange;
 
         if (_playerCollider != null)
         {
@@ -149,10 +162,10 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
 
         Vector3 attackOrigin = transform.position
                              + Vector3.up * ATTACK_HEIGHT_OFFSET
-                             + transform.forward * Mathf.Min(ATTACK_FORWARD_BIAS, _data.AttackRange * 0.5f);
+                             + transform.forward * Mathf.Min(ATTACK_FORWARD_BIAS, AttackRange * 0.5f);
 
         UnityEditor.Handles.color = new Color(1f, 0.2f, 0.2f, 0.25f);
-        UnityEditor.Handles.DrawSolidDisc(attackOrigin, Vector3.up, _data.AttackRange);
+        UnityEditor.Handles.DrawSolidDisc(attackOrigin, Vector3.up, AttackRange);
     }
 #endif
 }
