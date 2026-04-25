@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Standalone player decay resource. It drains during active gameplay, refills on
@@ -7,6 +8,11 @@ using UnityEngine;
 /// </summary>
 public class PlayerDecayComponent : MonoBehaviour
 {
+    [Header("Scene")]
+    [SerializeField] private bool _gameplaySceneOnly = true;
+    [SerializeField] private string _gameplaySceneName = "Gameplay";
+
+    [Header("Decay")]
     [SerializeField] private float _fullDrainDuration = 90f;
     [SerializeField] [Range(0f, 1f)] private float _killRefillAmount = 0.2f;
     [SerializeField] private float _emptyDamagePerSecond = 5f;
@@ -19,6 +25,11 @@ public class PlayerDecayComponent : MonoBehaviour
 
     public float DecayNormalized => _decayNormalized;
     public float GrayscaleAmount => CalculateGrayscaleAmount(_decayNormalized);
+
+    private bool IsGameplayScene =>
+        !_gameplaySceneOnly ||
+        string.IsNullOrWhiteSpace(_gameplaySceneName) ||
+        SceneManager.GetActiveScene().name == _gameplaySceneName;
 
     private void Awake()
     {
@@ -65,6 +76,9 @@ public class PlayerDecayComponent : MonoBehaviour
 
     private void OnEnemyDied(EnemyDiedEvent e)
     {
+        if (!IsGameplayScene)
+            return;
+
         if (_health != null && !_health.IsAlive)
             return;
 
@@ -88,6 +102,9 @@ public class PlayerDecayComponent : MonoBehaviour
             _health = GetComponentInParent<HealthComponent>();
 
         if (_health == null || !_health.IsAlive)
+            return false;
+
+        if (!IsGameplayScene)
             return false;
 
         if (_upgradePauseRooms.Count > 0)

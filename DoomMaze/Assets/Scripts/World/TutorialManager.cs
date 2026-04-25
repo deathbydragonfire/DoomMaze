@@ -113,12 +113,18 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private Button _proceedButton;
     [SerializeField] private TextMeshProUGUI _proceedPromptLabel;
     [SerializeField] private TextMeshProUGUI _proceedButtonLabel;
+    [SerializeField] private TextMeshProUGUI _fogPointMessageLabel;
     [SerializeField] private TMP_FontAsset _proceedFont;
     [SerializeField] private Color _fadeColor = Color.black;
     [SerializeField] private float _sceneFadeInDelay = 1f;
     [SerializeField] private float _sceneFadeInDuration = 0.8f;
     [SerializeField] private float _gameplaySceneFadeInDuration = 1.5f;
     [SerializeField] private float _fogPointFadeToBlackDuration = 1f;
+    [SerializeField] private string _fogPointFirstMessage = "Your mind and body decay slowly...";
+    [SerializeField] private string _fogPointSecondMessage = "Feed it with the soulds who get between you and the divine...";
+    [SerializeField] private float _fogPointMessageFadeInDuration = 0.75f;
+    [SerializeField] private float _fogPointMessageHoldDuration = 2f;
+    [SerializeField] private float _fogPointMessageFadeOutDuration = 0.75f;
     [SerializeField] private string _proceedPromptText = "Proceed?";
     [SerializeField] private string _proceedButtonText = "Proceed";
 
@@ -1484,12 +1490,15 @@ public class TutorialManager : MonoBehaviour
     {
         EnsureTransitionUi();
         HideProceedPanel();
+        HideFogPointMessageLabel();
 
         if (_fadeOverlay != null)
         {
             _fadeOverlay.raycastTarget = true;
             yield return StartCoroutine(FadeOverlayRoutine(GetFadeOverlayAlpha(), 1f, _fogPointFadeToBlackDuration));
         }
+
+        yield return StartCoroutine(PlayFogPointMessageSequenceRoutine());
 
         ShowProceedPanel();
         _fogPointTransitionRoutine = null;
@@ -1879,9 +1888,11 @@ public class TutorialManager : MonoBehaviour
         EnsureFadeOverlay();
         EnsureEnemyAndSuperActivationTintOverlay();
         EnsureProceedPanel();
+        EnsureFogPointMessageLabel();
         ApplyProceedFont();
         ApplyProceedText();
         HideProceedPanel();
+        HideFogPointMessageLabel();
     }
 
     private void EnsureEventSystem()
@@ -2051,6 +2062,32 @@ public class TutorialManager : MonoBehaviour
         MenuButtonHoverEffect.AttachToButtons(panelObject.transform);
     }
 
+    private void EnsureFogPointMessageLabel()
+    {
+        if (_transitionCanvas == null)
+            return;
+
+        if (_fogPointMessageLabel == null)
+        {
+            GameObject messageObject = new GameObject("FogPointMessageLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            messageObject.transform.SetParent(_transitionCanvas.transform, false);
+            _fogPointMessageLabel = messageObject.GetComponent<TextMeshProUGUI>();
+            _fogPointMessageLabel.alignment = TextAlignmentOptions.Center;
+            _fogPointMessageLabel.fontSize = 56f;
+            _fogPointMessageLabel.color = Color.white;
+            _fogPointMessageLabel.textWrappingMode = TextWrappingModes.Normal;
+
+            RectTransform messageRect = messageObject.GetComponent<RectTransform>();
+            messageRect.anchorMin = new Vector2(0.5f, 0.5f);
+            messageRect.anchorMax = new Vector2(0.5f, 0.5f);
+            messageRect.pivot = new Vector2(0.5f, 0.5f);
+            messageRect.anchoredPosition = Vector2.zero;
+            messageRect.sizeDelta = new Vector2(1100f, 220f);
+        }
+
+        _fogPointMessageLabel.raycastTarget = false;
+    }
+
     private void ApplyProceedText()
     {
         if (_proceedPromptLabel != null)
@@ -2062,14 +2099,25 @@ public class TutorialManager : MonoBehaviour
 
     private void ApplyProceedFont()
     {
-        if (_proceedFont == null)
+        TMP_FontAsset transitionFont = _proceedFont != null
+            ? _proceedFont
+            : _proceedPromptLabel != null
+                ? _proceedPromptLabel.font
+                : _proceedButtonLabel != null
+                    ? _proceedButtonLabel.font
+                    : null;
+
+        if (transitionFont == null)
             return;
 
         if (_proceedPromptLabel != null)
-            _proceedPromptLabel.font = _proceedFont;
+            _proceedPromptLabel.font = transitionFont;
 
         if (_proceedButtonLabel != null)
-            _proceedButtonLabel.font = _proceedFont;
+            _proceedButtonLabel.font = transitionFont;
+
+        if (_fogPointMessageLabel != null)
+            _fogPointMessageLabel.font = transitionFont;
     }
 
     private void BeginSceneFadeIn()
@@ -2163,6 +2211,69 @@ public class TutorialManager : MonoBehaviour
         _proceedPanel.alpha = 0f;
         _proceedPanel.interactable = false;
         _proceedPanel.blocksRaycasts = false;
+    }
+
+    private void HideFogPointMessageLabel()
+    {
+        if (_fogPointMessageLabel == null)
+            return;
+
+        SetFogPointMessageAlpha(0f);
+        _fogPointMessageLabel.text = string.Empty;
+        _fogPointMessageLabel.gameObject.SetActive(false);
+    }
+
+    private IEnumerator PlayFogPointMessageSequenceRoutine()
+    {
+        yield return StartCoroutine(PlayFogPointMessageRoutine(_fogPointFirstMessage));
+        yield return StartCoroutine(PlayFogPointMessageRoutine(_fogPointSecondMessage));
+    }
+
+    private IEnumerator PlayFogPointMessageRoutine(string message)
+    {
+        if (_fogPointMessageLabel == null || string.IsNullOrWhiteSpace(message))
+            yield break;
+
+        _fogPointMessageLabel.gameObject.SetActive(true);
+        _fogPointMessageLabel.transform.SetAsLastSibling();
+        _fogPointMessageLabel.text = message;
+        SetFogPointMessageAlpha(0f);
+
+        yield return StartCoroutine(FadeFogPointMessageRoutine(0f, 1f, _fogPointMessageFadeInDuration));
+
+        float holdDuration = Mathf.Max(0f, _fogPointMessageHoldDuration);
+        if (holdDuration > 0f)
+            yield return new WaitForSecondsRealtime(holdDuration);
+
+        yield return StartCoroutine(FadeFogPointMessageRoutine(1f, 0f, _fogPointMessageFadeOutDuration));
+
+        _fogPointMessageLabel.text = string.Empty;
+        _fogPointMessageLabel.gameObject.SetActive(false);
+    }
+
+    private IEnumerator FadeFogPointMessageRoutine(float fromAlpha, float toAlpha, float duration)
+    {
+        float elapsed = 0f;
+        float safeDuration = Mathf.Max(0.01f, duration);
+
+        while (elapsed < safeDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            SetFogPointMessageAlpha(Mathf.Lerp(fromAlpha, toAlpha, Mathf.Clamp01(elapsed / safeDuration)));
+            yield return null;
+        }
+
+        SetFogPointMessageAlpha(toAlpha);
+    }
+
+    private void SetFogPointMessageAlpha(float alpha)
+    {
+        if (_fogPointMessageLabel == null)
+            return;
+
+        Color color = _fogPointMessageLabel.color;
+        color.a = Mathf.Clamp01(alpha);
+        _fogPointMessageLabel.color = color;
     }
 
     private void ShowProceedPanel()

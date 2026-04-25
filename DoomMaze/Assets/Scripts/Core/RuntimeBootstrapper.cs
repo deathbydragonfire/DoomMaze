@@ -11,6 +11,7 @@ using UnityEngine.SceneManagement;
 public class RuntimeBootstrapper : MonoBehaviour
 {
     private const string BOOTSTRAP_SCENE_NAME = "Bootstrap";
+    private const string GAMEPLAY_SCENE_NAME = "Gameplay";
 
     private IEnumerator Start()
     {
@@ -32,6 +33,9 @@ public class RuntimeBootstrapper : MonoBehaviour
 
     private static void EnsurePlayerDecayComponent()
     {
+        if (SceneManager.GetActiveScene().name != GAMEPLAY_SCENE_NAME)
+            return;
+
         GameObject player = GameObject.FindWithTag("Player");
         if (player == null)
             return;
