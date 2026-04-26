@@ -60,8 +60,6 @@ public class EnemyData : ScriptableObject
     public float FrameRate;           // Sprite animation FPS
 
     [Header("Animation Triggers")]
-    public string IdleAnimTrigger;
-    public string WalkAnimTrigger;
     public string HurtAnimTrigger;
     public string DeathAnimTrigger;
 

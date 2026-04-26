@@ -106,6 +106,7 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
             Source = gameObject
         });
 
+        _enemyBase?.PlayAttackAnimationOneShot();
         AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
     }
 

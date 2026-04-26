@@ -54,6 +54,8 @@ public class EnemyBase : MonoBehaviour
     private Collider[] _deathCollisionColliders;
     private bool[] _deathCollisionInitialEnabled;
 
+    private static readonly int AnimParamWalk = Animator.StringToHash("Walk");
+
     private float _alertTimer;
     private float _hurtTimer;
     private float _distanceToPlayer;
@@ -71,7 +73,7 @@ public class EnemyBase : MonoBehaviour
         _agent = GetComponent<NavMeshAgent>();
         _healthComponent = GetComponent<HealthComponent>();
         _attackModules = GetComponents<IAttackModule>();
-        _animator = GetComponent<Animator>();
+        _animator = GetComponentInChildren<Animator>();
         _billboard = GetComponentInChildren<EnemySpriteBillboard>();
         _hitFlash = GetComponentInChildren<EnemyHitFlash>();
         _lineOfSightMask = GetLineOfSightMask();
@@ -131,10 +133,6 @@ public class EnemyBase : MonoBehaviour
         RecoverIfStuck();
         ApplyExternalVelocity();
 
-        if (_animator != null)
-        {
-            Debug.Log(_animator.GetCurrentAnimatorStateInfo(0).IsName("Idle"));
-        }
     }
 
     /// <summary>
@@ -177,6 +175,19 @@ public class EnemyBase : MonoBehaviour
         _externalVelocity += horizontalImpulse;
     }
 
+    /// <summary>
+    /// Drives the Walk bool on the model animator, or swaps the sprite animation on the billboard.
+    /// Clearing Walk returns the model animator to its default Idle state.
+    /// </summary>
+    private void SetWalkAnimation(bool walking)
+    {
+        if (_useModelAnimation)
+            _animator?.SetBool(AnimParamWalk, walking);
+        else
+            _billboard?.SetSpriteAnimation(walking ? _data?.WalkSprites : _data?.IdleSprites);
+    }
+
+    /// <summary>Fires a one-shot trigger on the model animator, or swaps the sprite animation on the billboard.</summary>
     public void SetAnimation(string animTrigger, Sprite[] frames, bool loop = true)
     {
         if (_useModelAnimation)
@@ -218,7 +229,12 @@ public class EnemyBase : MonoBehaviour
     private IEnumerator OnCompleteModelAnimationOneShot(Action onComplete)
     {
         if (_animator != null)
+        {
+            // Wait one frame so the Animator has evaluated the transition
+            // before sampling the target state's length.
+            yield return null;
             yield return new WaitForSeconds(_animator.GetCurrentAnimatorStateInfo(0).length);
+        }
 
         onComplete?.Invoke();
     }
@@ -392,16 +408,14 @@ public class EnemyBase : MonoBehaviour
             case EnemyState.Idle:
                 StopAgent(resetPath: true);
                 _isShowingWalkAnimation = false;
-                //_billboard?.SetSpriteAnimation(_data?.IdleSprites);
-                SetAnimation(_data?.IdleAnimTrigger, _data?.IdleSprites);
+                SetWalkAnimation(false);
                 break;
 
             case EnemyState.Alert:
                 StopAgent();
                 _alertTimer = AlertDwellTime;
                 _isShowingWalkAnimation = false;
-                // _billboard?.SetSpriteAnimation(_data?.IdleSprites);
-                SetAnimation(_data?.IdleAnimTrigger, _data?.IdleSprites);
+                SetWalkAnimation(false);
                 CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
@@ -416,8 +430,7 @@ public class EnemyBase : MonoBehaviour
                 CurrentAttack.OnAttackEnter();
                 _isShowingWalkAnimation = false;
                 if (CurrentAttack is IManualAttackAnimationModule)
-                    // _billboard?.SetSpriteAnimation(_data?.IdleSprites);
-                    SetAnimation(_data?.IdleAnimTrigger, _data?.IdleSprites);
+                    SetWalkAnimation(false);
                 else
                     // _billboard?.SetSpriteAnimation(_data?.AttackSprites);
                     SetAnimation(CurrentAttack?.AttackAnimTrigger, _data?.AttackSprites);
@@ -501,8 +514,7 @@ public class EnemyBase : MonoBehaviour
 
         CurrentState = EnemyState.Idle;
         CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
-        // _billboard?.SetSpriteAnimation(_data?.IdleSprites);
-        SetAnimation(_data?.IdleAnimTrigger, _data?.IdleSprites);
+        SetWalkAnimation(false);
     }
 
     private void RestorePostAttackAnimation()
@@ -511,8 +523,7 @@ public class EnemyBase : MonoBehaviour
             return;
 
         _isShowingWalkAnimation = false;
-        // _billboard?.SetSpriteAnimation(_data?.IdleSprites);
-        SetAnimation(_data?.IdleAnimTrigger, _data?.IdleSprites);
+        SetWalkAnimation(false);
     }
 
     private void ConfigureAgentFromData()
@@ -569,8 +580,7 @@ public class EnemyBase : MonoBehaviour
             if (!_isShowingWalkAnimation)
             {
                 _isShowingWalkAnimation = true;
-                //_billboard?.SetSpriteAnimation(_data?.WalkSprites);
-                SetAnimation(_data?.WalkAnimTrigger, _data?.WalkSprites);
+                SetWalkAnimation(true);
             }
         }
         else
@@ -578,8 +588,7 @@ public class EnemyBase : MonoBehaviour
             if (_isShowingWalkAnimation)
             {
                 _isShowingWalkAnimation = false;
-                // _billboard?.SetSpriteAnimation(_data?.IdleSprites);
-                SetAnimation(_data?.IdleAnimTrigger, _data?.IdleSprites);
+                SetWalkAnimation(false);
             }
         }
     }
