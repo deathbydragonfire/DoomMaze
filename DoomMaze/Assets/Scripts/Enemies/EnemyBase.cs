@@ -338,10 +338,10 @@ public class EnemyBase : MonoBehaviour
         if (PlayerTransform == null || _data == null)
             return false;
 
-        if (CurrentAttack == null || _distanceToPlayer > CurrentAttack.AttackRange)
+        if (CurrentAttack == null || _distanceToPlayer < CurrentAttack.MinAttackRange || _distanceToPlayer > CurrentAttack.MaxAttackRange)
         {
-            IAttackModule[] inRangeAttacks = _attackModules.Where(module => _distanceToPlayer <= module.AttackRange).OrderBy(module => module.AttackRange).ToArray();
-            CurrentAttack = inRangeAttacks.Length > 0 ? inRangeAttacks[0] : null;
+            IAttackModule[] inRangeAttacks = _attackModules.Where(module => _distanceToPlayer > module.MinAttackRange && _distanceToPlayer <= module.MaxAttackRange).ToArray();
+            CurrentAttack = inRangeAttacks.Length > 0 ? inRangeAttacks[Random.Range(0, inRangeAttacks.Length)] : null;
 
             return false;
         }
@@ -830,7 +830,7 @@ public class EnemyBase : MonoBehaviour
         UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, _data.AggroRange);
 
         UnityEditor.Handles.color = new Color(1f, 0.2f, 0.2f, 0.15f);
-        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, CurrentAttack.AttackRange);
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, CurrentAttack.MaxAttackRange);
     }
 #endif
 }

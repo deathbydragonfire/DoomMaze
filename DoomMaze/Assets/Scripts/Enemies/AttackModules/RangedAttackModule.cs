@@ -6,7 +6,8 @@ using UnityEngine;
 /// </summary>
 public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule
 {
-    [SerializeField] private float _attackRange = 12;
+    [SerializeField] private float _minAttackRange = 10;
+    [SerializeField] private float _maxAttackRange = 12;
     [SerializeField] private float _attackDamage = 10;
     [SerializeField] private float _attackRate = 2;
     [SerializeField] private DamageType _attackDamageType = DamageType.Energy;
@@ -19,7 +20,10 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public float AttackRange => _attackRange;         // Distance at which enemy can attack
+    public float MinAttackRange => _minAttackRange;
+
+    /// <inheritdoc/>
+    public float MaxAttackRange => _maxAttackRange;
 
     /// <inheritdoc/>
     public float AttackDamage => _attackDamage;
@@ -111,7 +115,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
             direction.normalized,
             AttackDamage,
             AttackDamageType,
-            AttackRange,
+            MaxAttackRange,
             _projectileSpeed,
             _projectileRadius
         );

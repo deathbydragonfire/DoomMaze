@@ -691,7 +691,7 @@ public class MazePopulator : MonoBehaviour
 
         foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
         {
-            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Boss)
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Start)
                 continue;
 
             GameObject player = GameObject.FindWithTag("Player");

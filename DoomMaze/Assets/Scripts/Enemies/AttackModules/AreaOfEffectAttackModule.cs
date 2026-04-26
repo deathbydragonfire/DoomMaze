@@ -6,20 +6,24 @@ using UnityEngine;
 /// </summary>
 public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule
 {
-    [SerializeField] private float _attackRange = 10;
+    [SerializeField] private float _minAttackRange = 8;
+    [SerializeField] private float _maxAttackRange = 10;
     [SerializeField] private float _attackDamage = 10;
-    [SerializeField] private float _attackRate = 1;
+    [SerializeField] private float _attackRate = 0.25f;
     [SerializeField] private DamageType _attackDamageType = DamageType.Energy;
     [SerializeField] private string _attackAnimTrigger = "AreaOfEffect";
     [SerializeField] private Transform _areaOfEffectPoint;
     [SerializeField] private Vector3 _areaOfEffectOffset = new Vector3(0.25f, 0f, 0.38f);
-    [SerializeField] private float _expansionSpeed = 1f;
+    [SerializeField] private float _expansionSpeed = 3f;
     //TODO: Need something for starting size of area?
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public float AttackRange => _attackRange;         // Distance at which enemy can attack
+    public float MinAttackRange => _minAttackRange;
+
+    /// <inheritdoc/>
+    public float MaxAttackRange => _maxAttackRange;
 
     /// <inheritdoc/>
     public float AttackDamage => _attackDamage;
@@ -111,7 +115,7 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
             direction.normalized,
             AttackDamage,
             AttackDamageType,
-            AttackRange,
+            MaxAttackRange,
             _expansionSpeed
         );
 

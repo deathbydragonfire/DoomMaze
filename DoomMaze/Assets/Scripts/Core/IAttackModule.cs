@@ -9,7 +9,9 @@ public interface IAttackModule
     /// <summary>Called by <see cref="EnemyBase"/> each Update tick while in the Attack state.</summary>
     void Tick();
 
-    float AttackRange { get; }         // Distance at which enemy can attack
+    float MinAttackRange { get; }         // Minimum distance at which enemy can attack
+
+    float MaxAttackRange { get; }         // Maximum distance at which enemy can attack
 
     float AttackDamage { get; }
 

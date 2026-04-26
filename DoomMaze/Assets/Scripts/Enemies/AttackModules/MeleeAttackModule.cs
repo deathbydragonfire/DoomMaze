@@ -9,7 +9,8 @@ public interface IManualAttackAnimationModule { }
 /// </summary>
 public class MeleeAttackModule : MonoBehaviour, IAttackModule
 {
-    [SerializeField] private float _attackRange = 2;
+    [SerializeField] private float _minAttackRange = 2;
+    [SerializeField] private float _maxAttackRange = 3;
     [SerializeField] private float _attackDamage = 15;
     [SerializeField] private float _attackRate = 1;
     [SerializeField] private DamageType _attackDamageType = DamageType.Physical;
@@ -18,7 +19,10 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public float AttackRange => _attackRange;         // Distance at which enemy can attack
+    public float MinAttackRange => _minAttackRange;
+
+    /// <inheritdoc/>
+    public float MaxAttackRange => _maxAttackRange;
 
     /// <inheritdoc/>
     public float AttackDamage => _attackDamage;
@@ -142,14 +146,14 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
         toPlayer.y = 0f;
 
         if (toPlayer.sqrMagnitude > 0.0001f)
-            attackOrigin += toPlayer.normalized * Mathf.Min(ATTACK_FORWARD_BIAS, AttackRange * 0.5f);
+            attackOrigin += toPlayer.normalized * Mathf.Min(ATTACK_FORWARD_BIAS, MaxAttackRange * 0.5f);
 
         return attackOrigin;
     }
 
     private bool IsPlayerInRange(Vector3 attackOrigin)
     {
-        float attackRangeSqr = AttackRange * AttackRange;
+        float attackRangeSqr = MaxAttackRange * MaxAttackRange;
 
         if (_playerCollider != null)
         {
@@ -167,10 +171,10 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
 
         Vector3 attackOrigin = transform.position
                              + Vector3.up * ATTACK_HEIGHT_OFFSET
-                             + transform.forward * Mathf.Min(ATTACK_FORWARD_BIAS, AttackRange * 0.5f);
+                             + transform.forward * Mathf.Min(ATTACK_FORWARD_BIAS, MaxAttackRange * 0.5f);
 
         UnityEditor.Handles.color = new Color(1f, 0.2f, 0.2f, 0.25f);
-        UnityEditor.Handles.DrawSolidDisc(attackOrigin, Vector3.up, AttackRange);
+        UnityEditor.Handles.DrawSolidDisc(attackOrigin, Vector3.up, MaxAttackRange);
     }
 #endif
 }
