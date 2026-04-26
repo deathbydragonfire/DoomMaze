@@ -4,8 +4,8 @@ using UnityEngine;
 /// <summary>
 /// Rotates the enemy sprite child to always face the main camera (Y-axis billboard).
 /// Also drives the sprite flipbook by advancing frames from the active <see cref="Sprite"/> array.
-/// Does not own state - <see cref="EnemyBase"/> calls <see cref="SetAnimation"/> or
-/// <see cref="SetAnimationOneShot"/> to switch the active sequence.
+/// Does not own state - <see cref="EnemyBase"/> calls <see cref="SetSpriteAnimation"/> or
+/// <see cref="SetSpriteAnimationOneShot"/> to switch the active sequence.
 /// </summary>
 [RequireComponent(typeof(SpriteRenderer))]
 public class EnemySpriteBillboard : MonoBehaviour
@@ -114,7 +114,7 @@ public class EnemySpriteBillboard : MonoBehaviour
     }
 
     /// <summary>Switches to a looping sprite sequence.</summary>
-    public void SetAnimation(Sprite[] frames, bool loop = true)
+    public void SetSpriteAnimation(Sprite[] frames, bool loop = true)
     {
         if (frames == null || frames.Length == 0)
             return;
@@ -131,7 +131,7 @@ public class EnemySpriteBillboard : MonoBehaviour
     }
 
     /// <summary>Plays a one-shot sprite sequence, then invokes <paramref name="onComplete"/>.</summary>
-    public void SetAnimationOneShot(Sprite[] frames, Action onComplete)
+    public void SetSpriteAnimationOneShot(Sprite[] frames, Action onComplete)
     {
         if (frames == null || frames.Length == 0)
         {

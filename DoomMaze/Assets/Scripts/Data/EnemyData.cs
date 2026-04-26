@@ -51,13 +51,19 @@ public class EnemyData : ScriptableObject
     public AudioClip[] FootstepSoundVariants;
     [Range(0f, 1f)] public float FootstepVolume = 1f;
 
-    [Header("Visuals")]
+    [Header("Sprites")]
     public Sprite[] IdleSprites;
     public Sprite[] WalkSprites;
     public Sprite[] AttackSprites;
     public Sprite[] HurtSprites;
     public Sprite[] DeathSprites;
     public float FrameRate;           // Sprite animation FPS
+
+    [Header("Animation Triggers")]
+    public string IdleAnimTrigger;
+    public string WalkAnimTrigger;
+    public string HurtAnimTrigger;
+    public string DeathAnimTrigger;
 
     [Header("Grapple")]
     public bool IsHookImmune;

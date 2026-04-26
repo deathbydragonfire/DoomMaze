@@ -84,7 +84,6 @@ public class BossRoomController : MonoBehaviour
     private RectTransform _timerRect;
     private TextMeshProUGUI _timerLabel;
     private float _timerPulseRemaining;
-    private int _lastWarningSecond = -1;
     private bool _configured;
     private bool _started;
     private bool _completed;

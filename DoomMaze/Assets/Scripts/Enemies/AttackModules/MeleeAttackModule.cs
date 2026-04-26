@@ -13,6 +13,7 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     [SerializeField] private float _attackDamage = 15;
     [SerializeField] private float _attackRate = 1;
     [SerializeField] private DamageType _attackDamageType = DamageType.Physical;
+    [SerializeField] private string _attackAnimTrigger = "Melee";
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
@@ -27,6 +28,9 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
 
     /// <inheritdoc/>
     public DamageType AttackDamageType => _attackDamageType;
+
+    /// <inheritdoc/>
+    public string AttackAnimTrigger => _attackAnimTrigger;
 
     // ── Constants ───────────────────────────────────────────────────────────────
 

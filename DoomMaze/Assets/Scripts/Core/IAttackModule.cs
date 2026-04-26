@@ -16,4 +16,8 @@ public interface IAttackModule
     float AttackRate { get; }          // Attacks per second
 
     DamageType AttackDamageType { get; }
+
+    //TODO: Move all attack fields from data onto this script
+
+    string AttackAnimTrigger { get; }
 }

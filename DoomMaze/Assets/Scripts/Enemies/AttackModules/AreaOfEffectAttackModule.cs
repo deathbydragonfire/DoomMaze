@@ -1,20 +1,20 @@
+using Unity.VisualScripting;
 using UnityEngine;
 
 /// <summary>
-/// Ranged attack module that spawns a simple projectile toward the player at
-/// intervals defined by <see cref="AttackRate"/>.
+/// Area of effect attack module that generates a damaging trigger area at intervals defined by <see cref="AttackRate"/>.
 /// </summary>
-public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule
+public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule
 {
-    [SerializeField] private float _attackRange = 12;
+    [SerializeField] private float _attackRange = 10;
     [SerializeField] private float _attackDamage = 10;
-    [SerializeField] private float _attackRate = 2;
+    [SerializeField] private float _attackRate = 1;
     [SerializeField] private DamageType _attackDamageType = DamageType.Energy;
-    [SerializeField] private string _attackAnimTrigger = "Ranged";
-    [SerializeField] private Transform _muzzlePoint;
-    [SerializeField] private Vector3 _muzzleOffset = new Vector3(0f, 0.95f, 0.55f);
-    [SerializeField] private float _projectileSpeed = 16f;
-    [SerializeField] private float _projectileRadius = 0.22f;
+    [SerializeField] private string _attackAnimTrigger = "AreaOfEffect";
+    [SerializeField] private Transform _areaOfEffectPoint;
+    [SerializeField] private Vector3 _areaOfEffectOffset = new Vector3(0.25f, 0f, 0.38f);
+    [SerializeField] private float _expansionSpeed = 1f;
+    //TODO: Need something for starting size of area?
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
@@ -44,10 +44,10 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
     {
         _enemyBase = GetComponent<EnemyBase>();
         if (_enemyBase == null)
-            Debug.LogError("[RangedAttackModule] EnemyBase not found on this GameObject.");
+            Debug.LogError("[AreaOfEffectAttackModule] EnemyBase not found on this GameObject.");
 
-        if (_muzzlePoint == null)
-            _muzzlePoint = FindMuzzlePoint();
+        if (_areaOfEffectPoint == null)
+            _areaOfEffectPoint = FindAreaOfEffectPoint();
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
 
         _data = _enemyBase.Data;
         if (_data == null)
-            Debug.LogError("[RangedAttackModule] EnemyData is null - assign EnemyData to EnemyBase.");
+            Debug.LogError("[AreaOfEffectAttackModule] EnemyData is null - assign EnemyData to EnemyBase.");
 
         CachePlayerReference(logWarnings: true);
     }
@@ -84,36 +84,35 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
         _attackTimer -= Time.deltaTime;
         if (_attackTimer <= 0f)
         {
-            FireProjectile();
+            GenerateAreaOfEffect();
             _attackTimer = 1f / AttackRate;
         }
     }
 
-    private void FireProjectile()
+    private void GenerateAreaOfEffect()
     {
         CachePlayerReference(logWarnings: false);
 
         if (_playerTransform == null)
             return;
 
-        Vector3 origin = GetMuzzlePosition();
+        Vector3 origin = GetAreaOfEffectPosition();
         Vector3 targetPosition = _playerTransform.position + Vector3.up;
         Vector3 direction = targetPosition - origin;
 
         if (direction.sqrMagnitude <= 0.0001f)
             return;
 
-        GameObject projectileObject = new GameObject($"{gameObject.name}_Projectile");
-        EnemyProjectile projectile = projectileObject.AddComponent<EnemyProjectile>();
-        projectile.Launch(
+        GameObject areaOfEffectObject = new GameObject($"{gameObject.name}_AreaOfEffect");
+        EnemyAreaOfEffect areaOfEffect = areaOfEffectObject.AddComponent<EnemyAreaOfEffect>();
+        areaOfEffect.Generate(
             gameObject,
             origin,
             direction.normalized,
             AttackDamage,
             AttackDamageType,
             AttackRange,
-            _projectileSpeed,
-            _projectileRadius
+            _expansionSpeed
         );
 
         _enemyBase?.PlayAttackAnimationOneShot();
@@ -129,17 +128,17 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
             Debug.LogWarning("[RangedAttackModule] Player transform not cached on EnemyBase.");
     }
 
-    private Vector3 GetMuzzlePosition()
+    private Vector3 GetAreaOfEffectPosition()
     {
-        return _muzzlePoint != null ? _muzzlePoint.position : transform.TransformPoint(_muzzleOffset);
+        return _areaOfEffectPoint != null ? _areaOfEffectPoint.position : transform.TransformPoint(_areaOfEffectOffset);
     }
 
-    private Transform FindMuzzlePoint()
+    private Transform FindAreaOfEffectPoint()
     {
         Transform[] children = GetComponentsInChildren<Transform>(true);
         for (int i = 0; i < children.Length; i++)
         {
-            if (children[i] != transform && children[i].name == "Muzzle")
+            if (children[i] != transform && children[i].name == "AreaOfEffect")
                 return children[i];
         }
 
@@ -152,8 +151,9 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
         if (_data == null || _playerTransform == null)
             return;
 
-        UnityEditor.Handles.color = new Color(1f, 0.6f, 0f, 0.6f);
-        UnityEditor.Handles.DrawLine(GetMuzzlePosition(), _playerTransform.position + Vector3.up);
+        // UnityEditor.Handles.color = new Color(1f, 0.6f, 0f, 0.6f);
+        // UnityEditor.Handles.DrawLine(GetAreaOfEffectPosition(), _playerTransform.position + Vector3.up);
     }
 #endif
 }
+
