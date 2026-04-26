@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.AI;
 using Random = UnityEngine.Random;
@@ -334,8 +335,16 @@ public class EnemyBase : MonoBehaviour
 
     private bool CanAttackPlayer(bool canDetectPlayer, bool shouldPursuePlayer)
     {
-        if (PlayerTransform == null || _data == null || CurrentAttack == null || _distanceToPlayer > CurrentAttack.AttackRange)
+        if (PlayerTransform == null || _data == null)
             return false;
+
+        if (CurrentAttack == null || _distanceToPlayer > CurrentAttack.AttackRange)
+        {
+            IAttackModule[] inRangeAttacks = _attackModules.Where(module => _distanceToPlayer <= module.AttackRange).OrderBy(module => module.AttackRange).ToArray();
+            CurrentAttack = inRangeAttacks.Length > 0 ? inRangeAttacks[0] : null;
+
+            return false;
+        }
 
         if (_data.AggroDetectionMode == EnemyAggroDetectionMode.LineOfSight)
             return canDetectPlayer;
@@ -416,7 +425,6 @@ public class EnemyBase : MonoBehaviour
                 _alertTimer = AlertDwellTime;
                 _isShowingWalkAnimation = false;
                 SetWalkAnimation(false);
-                CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
                 AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
 
