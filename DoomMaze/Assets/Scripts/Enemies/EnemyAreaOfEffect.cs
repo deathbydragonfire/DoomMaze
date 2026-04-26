@@ -131,15 +131,18 @@ public class EnemyAreaOfEffect : MonoBehaviour
             _visual.name = "Visual";
             _visual.transform.SetParent(transform, false);
 
-            transform.localScale = Vector3.zero;
+            Collider oldCollider = _visual.GetComponent<Collider>();
+            if (oldCollider != null)
+                oldCollider.enabled = false;
 
-            Collider collider = _visual.GetComponent<Collider>();
-            if (collider != null)
-                collider.isTrigger = true;
+            Collider newCollider = _visual.AddComponent<BoxCollider>();
+            newCollider.isTrigger = true;
 
             MeshRenderer meshRenderer = _visual.GetComponent<MeshRenderer>();
             if (meshRenderer != null)
                 meshRenderer.sharedMaterial = GetSharedMaterial();
+
+            transform.localScale = Vector3.zero;
         }
 
         _areaOfEffectTrigger = _visual.AddComponent<AreaOfEffectTrigger>();

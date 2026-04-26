@@ -233,7 +233,7 @@ public class EnemyBase : MonoBehaviour
         {
             // Wait one frame so the Animator has evaluated the transition
             // before sampling the target state's length.
-            yield return null;
+            yield return new WaitForEndOfFrame();
             yield return new WaitForSeconds(_animator.GetCurrentAnimatorStateInfo(0).length);
         }
 
