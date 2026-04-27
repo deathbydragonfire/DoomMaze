@@ -21,6 +21,11 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
     [SerializeField] private float _fireDelay = 0.32f;
     [SerializeField] private AudioClip _attackSoundOverride;
     [SerializeField] [Range(0f, 1f)] private float _attackSoundOverrideVolume = 1f;
+    [SerializeField] private bool _useBossVisualPolish;
+    [SerializeField] private Color _bossProjectileColor = new(0.25f, 0.95f, 1f, 1f);
+    [SerializeField] private Color _bossProjectileEmissionColor = new(0.75f, 4.2f, 5f, 1f);
+    [SerializeField] private Color _bossWindupColor = new(0.2f, 0.9f, 1f, 0.45f);
+    [SerializeField] private float _bossVisualIntensity = 1f;
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
@@ -85,6 +90,30 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
         }
     }
 
+    public void ConfigureProjectileReach(float maxAttackRange, float projectileMaxDistance, float projectileRadius, float projectileSpeed)
+    {
+        if (maxAttackRange > _minAttackRange)
+            _maxAttackRange = maxAttackRange;
+
+        if (projectileMaxDistance > 0f)
+            _projectileMaxDistance = projectileMaxDistance;
+
+        if (projectileRadius > 0f)
+            _projectileRadius = projectileRadius;
+
+        if (projectileSpeed > 0f)
+            _projectileSpeed = projectileSpeed;
+    }
+
+    public void ConfigureBossVisualPolish(Color projectileColor, Color emissionColor, Color windupColor, float intensity)
+    {
+        _useBossVisualPolish = true;
+        _bossProjectileColor = projectileColor;
+        _bossProjectileEmissionColor = emissionColor;
+        _bossWindupColor = windupColor;
+        _bossVisualIntensity = Mathf.Max(0.1f, intensity);
+    }
+
     // ── IAttackModule implementation ────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -114,6 +143,7 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
     {
         _enemyBase?.PlayAttackAnimationOneShot();
         PlayAttackSound();
+        SpawnBossWindupPulse();
 
         yield return new WaitForSeconds(Mathf.Max(0f, _fireDelay));
 
@@ -153,14 +183,44 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
             _projectileSpeed,
             _projectileRadius
         );
+
+        if (_useBossVisualPolish)
+        {
+            projectile.ConfigureBossVisuals(
+                _bossProjectileColor,
+                _bossProjectileEmissionColor,
+                5.5f * _bossVisualIntensity,
+                4.6f * _bossVisualIntensity,
+                useTrail: true,
+                impactPulse: true,
+                impactPulseRadius: Mathf.Max(1.2f, _projectileRadius * 2.4f),
+                impactPulseColor: _bossWindupColor,
+                impactShake: 0.006f * _bossVisualIntensity);
+        }
+    }
+
+    private void SpawnBossWindupPulse()
+    {
+        if (!_useBossVisualPolish)
+            return;
+
+        BossAttackVfx.SpawnImpactPulse(
+            GetMuzzlePosition(),
+            Mathf.Lerp(1.1f, 1.85f, Mathf.Clamp01(_bossVisualIntensity - 1f)),
+            _bossWindupColor,
+            Mathf.Clamp(_fireDelay, 0.14f, 0.34f),
+            0f);
     }
 
     private void PlayAttackSound()
     {
-        if (_attackSoundOverride != null)
-            AudioManager.Instance?.PlaySfx(_attackSoundOverride, _attackSoundOverrideVolume);
+        AudioClip clip = _attackSoundOverride != null ? _attackSoundOverride : _data.GetAttackClip();
+        float volume = _attackSoundOverride != null ? _attackSoundOverrideVolume : _data.AttackVolume;
+
+        if (_useBossVisualPolish || (_enemyBase != null && _enemyBase.UsesBossSfxVolume))
+            AudioManager.Instance?.PlayBossSfx(clip, volume);
         else
-            AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+            AudioManager.Instance?.PlaySfx(clip, volume);
     }
 
     private void CachePlayerReference(bool logWarnings)

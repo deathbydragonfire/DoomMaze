@@ -33,6 +33,7 @@ public class AudioManager : MonoBehaviour
     private float _musicVolume = 1f;
     private float _uiVolume = 1f;
     private float _gameplayVolume = 1f;
+    private float _bossSfxVolume = 1f;
     private float _decayDuckIntensity;
 
     private void Awake()
@@ -88,6 +89,27 @@ public class AudioManager : MonoBehaviour
         PlaySfx(clips[Random.Range(0, clips.Length)], volumeScale);
     }
 
+    public void PlayBossSfx(AudioClip clip)
+    {
+        PlayBossSfx(clip, 1f);
+    }
+
+    public void PlayBossSfx(AudioClip clip, float volumeScale)
+    {
+        PlaySfx(clip, Mathf.Clamp01(volumeScale) * _bossSfxVolume);
+    }
+
+    public void PlayBossSfx(AudioClip[] clips)
+    {
+        PlayBossSfx(clips, 1f);
+    }
+
+    public void PlayBossSfx(AudioClip[] clips, float volumeScale)
+    {
+        if (clips == null || clips.Length == 0) return;
+        PlayBossSfx(clips[Random.Range(0, clips.Length)], volumeScale);
+    }
+
     /// <summary>Plays a clip on the UI source.</summary>
     public void PlayUi(AudioClip clip)
     {
@@ -139,6 +161,11 @@ public class AudioManager : MonoBehaviour
         ApplyMixerVolumes();
     }
 
+    public void SetBossSfxVolume(float normalizedVolume)
+    {
+        _bossSfxVolume = Mathf.Clamp01(normalizedVolume);
+    }
+
     /// <summary>Compatibility wrapper for older gameplay SFX callers.</summary>
     public void SetSfxVolume(float normalizedVolume)
     {
@@ -187,6 +214,7 @@ public class AudioManager : MonoBehaviour
         _musicVolume = Mathf.Clamp01(settings.MusicVolume);
         _uiVolume = Mathf.Clamp01(settings.UiVolume);
         _gameplayVolume = Mathf.Clamp01(settings.GameplayVolume);
+        _bossSfxVolume = Mathf.Clamp01(settings.BossSfxVolume);
         ApplyMixerVolumes();
     }
 

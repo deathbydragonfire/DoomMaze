@@ -131,6 +131,28 @@ public class HealthComponent : MonoBehaviour, IDamageable
         return restoredAmount;
     }
 
+    /// <summary>Sets invulnerability directly for gameplay systems such as boss shields.</summary>
+    public void SetInvulnerable(bool invulnerable)
+    {
+        IsInvulnerable = invulnerable;
+    }
+
+    /// <summary>Changes max HP for runtime-generated damageable objects.</summary>
+    public void SetMaxHealth(int maxHealth, bool refill)
+    {
+        _maxHealth = Mathf.Max(1, maxHealth);
+        if (refill)
+        {
+            CurrentHealth = _maxHealth;
+            IsAlive = true;
+            _wasLowHealth = false;
+        }
+        else
+        {
+            CurrentHealth = Mathf.Clamp(CurrentHealth, 0, _maxHealth);
+        }
+    }
+
     /// <summary>Instantly kills this entity.</summary>
     public void Kill()
     {

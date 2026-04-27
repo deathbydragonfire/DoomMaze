@@ -34,9 +34,19 @@ public sealed class MenuButtonHoverEffect : MonoBehaviour, IPointerEnterHandler,
         Button[] buttons = root.GetComponentsInChildren<Button>(true);
         foreach (Button button in buttons)
         {
-            if (button.GetComponent<MenuButtonHoverEffect>() == null)
+            MenuButtonHoverEffect effect = button.GetComponent<MenuButtonHoverEffect>();
+            if (effect == null)
                 button.gameObject.AddComponent<MenuButtonHoverEffect>();
+            else
+                effect.RefreshVisualTarget();
         }
+    }
+
+    public void RefreshVisualTarget()
+    {
+        CacheReferences();
+        CaptureDefaults();
+        SnapToCurrentState();
     }
 
     private void Awake()
@@ -108,7 +118,17 @@ public sealed class MenuButtonHoverEffect : MonoBehaviour, IPointerEnterHandler,
         _hoverAudioProvider = FindHoverAudioProvider();
 
         TMP_Text label = GetComponentInChildren<TMP_Text>(true);
-        _targetGraphic = label != null ? label : _button != null ? _button.targetGraphic : GetComponent<Graphic>();
+        Graphic nextTargetGraphic = _button != null && _button.targetGraphic != null
+            ? _button.targetGraphic
+            : label != null
+                ? label
+                : GetComponent<Graphic>();
+
+        if (_targetGraphic != nextTargetGraphic)
+        {
+            _targetGraphic = nextTargetGraphic;
+            _hasCapturedDefaults = false;
+        }
     }
 
     private void CaptureDefaults()

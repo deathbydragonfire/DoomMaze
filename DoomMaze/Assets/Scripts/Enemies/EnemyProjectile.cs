@@ -22,6 +22,8 @@ public class EnemyProjectile : MonoBehaviour
 
     private readonly RaycastHit[] _hitBuffer = new RaycastHit[8];
 
+    private GameObject _visual;
+    private Light _lightComponent;
     private GameObject _owner;
     private Collider[] _ownerColliders;
     private Vector3 _direction;
@@ -33,6 +35,12 @@ public class EnemyProjectile : MonoBehaviour
     private float _distanceTravelled;
     private float _remainingLifetime = DEFAULT_LIFETIME;
     private bool _isLaunched;
+    private bool _bossTrailEnabled;
+    private bool _bossImpactPulseEnabled;
+    private float _bossImpactPulseRadius = 1.2f;
+    private float _bossImpactShake;
+    private Color _bossImpactPulseColor = new(0.25f, 0.95f, 1f, 0.42f);
+    private bool _impactFeedbackPlayed;
 
     private void Awake()
     {
@@ -65,6 +73,40 @@ public class EnemyProjectile : MonoBehaviour
         transform.rotation = Quaternion.LookRotation(_direction, Vector3.up);
     }
 
+    public void ConfigureBossVisuals(
+        Color projectileColor,
+        Color emissionColor,
+        float lightIntensity,
+        float lightRange,
+        bool useTrail,
+        bool impactPulse,
+        float impactPulseRadius,
+        Color impactPulseColor,
+        float impactShake)
+    {
+        _bossTrailEnabled = useTrail;
+        _bossImpactPulseEnabled = impactPulse;
+        _bossImpactPulseRadius = Mathf.Max(0.1f, impactPulseRadius);
+        _bossImpactPulseColor = impactPulseColor;
+        _bossImpactShake = Mathf.Max(0f, impactShake);
+
+        EnsureVisuals();
+
+        Renderer renderer = _visual != null ? _visual.GetComponent<Renderer>() : null;
+        if (renderer != null)
+            renderer.material = CreateMaterial("BossEnemyProjectile_Runtime", projectileColor, emissionColor);
+
+        if (_lightComponent != null)
+        {
+            _lightComponent.color = projectileColor;
+            _lightComponent.intensity = Mathf.Max(0f, lightIntensity);
+            _lightComponent.range = Mathf.Max(0.1f, lightRange);
+        }
+
+        if (_bossTrailEnabled)
+            EnsureTrail(projectileColor, emissionColor);
+    }
+
     private void Update()
     {
         if (!_isLaunched)
@@ -87,7 +129,7 @@ public class EnemyProjectile : MonoBehaviour
         _remainingLifetime -= deltaTime;
 
         if (_distanceTravelled >= _maxDistance || _remainingLifetime <= 0f)
-            Destroy(gameObject);
+            DestroyWithFeedback();
     }
 
     private bool TryGetNextHit(float stepDistance, out RaycastHit closestHit)
@@ -164,36 +206,84 @@ public class EnemyProjectile : MonoBehaviour
             });
         }
 
+        DestroyWithFeedback();
+    }
+
+    private void DestroyWithFeedback()
+    {
+        SpawnImpactFeedback();
         Destroy(gameObject);
+    }
+
+    private void SpawnImpactFeedback()
+    {
+        if (!_bossImpactPulseEnabled || _impactFeedbackPlayed)
+            return;
+
+        _impactFeedbackPlayed = true;
+        BossAttackVfx.SpawnImpactPulse(transform.position, _bossImpactPulseRadius, _bossImpactPulseColor, 0.18f, _bossImpactShake);
     }
 
     private void EnsureVisuals()
     {
         if (transform.Find("Visual") == null)
         {
-            GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            visual.name = "Visual";
-            visual.transform.SetParent(transform, false);
-            visual.transform.localScale = Vector3.one * VISUAL_SCALE;
+            _visual = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            _visual.name = "Visual";
+            _visual.transform.SetParent(transform, false);
+            _visual.transform.localScale = Vector3.one * VISUAL_SCALE;
 
-            Collider collider = visual.GetComponent<Collider>();
+            Collider collider = _visual.GetComponent<Collider>();
             if (collider != null)
                 collider.enabled = false;
 
-            MeshRenderer meshRenderer = visual.GetComponent<MeshRenderer>();
+            MeshRenderer meshRenderer = _visual.GetComponent<MeshRenderer>();
             if (meshRenderer != null)
                 meshRenderer.sharedMaterial = GetSharedMaterial();
         }
+        else if (_visual == null)
+        {
+            Transform visualTransform = transform.Find("Visual");
+            _visual = visualTransform != null ? visualTransform.gameObject : null;
+        }
 
-        Light lightComponent = GetComponent<Light>();
-        if (lightComponent == null)
-            lightComponent = gameObject.AddComponent<Light>();
+        _lightComponent = GetComponent<Light>();
+        if (_lightComponent == null)
+            _lightComponent = gameObject.AddComponent<Light>();
 
-        lightComponent.type = LightType.Point;
-        lightComponent.color = new Color(0.35f, 0.9f, 1f, 1f);
-        lightComponent.intensity = LIGHT_INTENSITY;
-        lightComponent.range = LIGHT_RANGE;
-        lightComponent.shadows = LightShadows.None;
+        _lightComponent.type = LightType.Point;
+        _lightComponent.color = new Color(0.35f, 0.9f, 1f, 1f);
+        _lightComponent.intensity = LIGHT_INTENSITY;
+        _lightComponent.range = LIGHT_RANGE;
+        _lightComponent.shadows = LightShadows.None;
+    }
+
+    private void EnsureTrail(Color projectileColor, Color emissionColor)
+    {
+        TrailRenderer trail = GetComponent<TrailRenderer>();
+        if (trail == null)
+            trail = gameObject.AddComponent<TrailRenderer>();
+
+        trail.time = 0.18f;
+        trail.minVertexDistance = 0.05f;
+        trail.widthMultiplier = Mathf.Max(0.18f, _collisionRadius * 0.75f);
+        trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        trail.receiveShadows = false;
+        trail.material = CreateTrailMaterial("BossEnemyProjectileTrail_Runtime", projectileColor, emissionColor);
+
+        Gradient gradient = new();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(projectileColor, 0f),
+                new GradientColorKey(emissionColor, 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(0.62f, 0f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        trail.colorGradient = gradient;
     }
 
     private static Material GetSharedMaterial()
@@ -208,26 +298,85 @@ public class EnemyProjectile : MonoBehaviour
         if (shader == null)
             return null;
 
-        _sharedMaterial = new Material(shader)
-        {
-            name = "EnemyProjectile_Runtime"
-        };
-
         Color baseColor = new Color(0.35f, 0.9f, 1f, 1f);
         Color emissionColor = new Color(0.8f, 3.5f, 4.2f, 1f);
-
-        if (_sharedMaterial.HasProperty(BaseColorId))
-            _sharedMaterial.SetColor(BaseColorId, baseColor);
-
-        if (_sharedMaterial.HasProperty(ColorId))
-            _sharedMaterial.SetColor(ColorId, baseColor);
-
-        if (_sharedMaterial.HasProperty(EmissionColorId))
-            _sharedMaterial.SetColor(EmissionColorId, emissionColor);
-
-        _sharedMaterial.EnableKeyword("_EMISSION");
+        _sharedMaterial = CreateMaterial("EnemyProjectile_Runtime", baseColor, emissionColor);
         _sharedMaterial.hideFlags = HideFlags.HideAndDontSave;
 
         return _sharedMaterial;
+    }
+
+    private static Material CreateMaterial(string materialName, Color baseColor, Color emissionColor)
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Standard");
+        if (shader == null)
+            return null;
+
+        Material material = new(shader)
+        {
+            name = materialName
+        };
+
+        if (material.HasProperty(BaseColorId))
+            material.SetColor(BaseColorId, baseColor);
+
+        if (material.HasProperty(ColorId))
+            material.SetColor(ColorId, baseColor);
+
+        if (material.HasProperty(EmissionColorId))
+            material.SetColor(EmissionColorId, emissionColor);
+
+        material.EnableKeyword("_EMISSION");
+        return material;
+    }
+
+    private static Material CreateTrailMaterial(string materialName, Color baseColor, Color emissionColor)
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Transparent");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Color");
+        if (shader == null)
+            return CreateMaterial(materialName, baseColor, emissionColor);
+
+        Material material = new(shader)
+        {
+            name = materialName
+        };
+
+        if (material.HasProperty(BaseColorId))
+            material.SetColor(BaseColorId, baseColor);
+
+        if (material.HasProperty(ColorId))
+            material.SetColor(ColorId, baseColor);
+
+        if (material.HasProperty(EmissionColorId))
+            material.SetColor(EmissionColorId, emissionColor);
+
+        if (material.HasProperty("_Surface"))
+            material.SetFloat("_Surface", 1f);
+        if (material.HasProperty("_Mode"))
+            material.SetFloat("_Mode", 2f);
+        if (material.HasProperty("_SrcBlend"))
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        if (material.HasProperty("_DstBlend"))
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        if (material.HasProperty("_ZWrite"))
+            material.SetFloat("_ZWrite", 0f);
+
+        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.EnableKeyword("_ALPHABLEND_ON");
+        material.EnableKeyword("_EMISSION");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        return material;
     }
 }

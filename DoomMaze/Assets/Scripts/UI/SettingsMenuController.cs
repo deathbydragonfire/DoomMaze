@@ -14,6 +14,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
     [SerializeField] private Slider _sfxVolumeSlider;
     [SerializeField] private Slider _uiVolumeSlider;
     [SerializeField] private Slider _gameplayVolumeSlider;
+    [SerializeField] private Slider _bossSfxVolumeSlider;
     [SerializeField] private Slider _sensitivitySlider;
     [SerializeField] private Toggle _fullscreenToggle;
     [SerializeField] private Toggle _skipTutorialToggle;
@@ -93,6 +94,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         settings.MusicVolume = _musicVolumeSlider != null ? _musicVolumeSlider.value : settings.MusicVolume;
         settings.UiVolume = _uiVolumeSlider != null ? _uiVolumeSlider.value : settings.UiVolume;
         settings.GameplayVolume = _gameplayVolumeSlider != null ? _gameplayVolumeSlider.value : settings.GameplayVolume;
+        settings.BossSfxVolume = _bossSfxVolumeSlider != null ? _bossSfxVolumeSlider.value : settings.BossSfxVolume;
         settings.SfxVolume = settings.GameplayVolume;
         settings.MouseSensitivity = _sensitivitySlider != null ? _sensitivitySlider.value : settings.MouseSensitivity;
         settings.InvertY = false;
@@ -122,6 +124,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         currentSettings.MusicVolume = resetSettings.MusicVolume;
         currentSettings.UiVolume = resetSettings.UiVolume;
         currentSettings.GameplayVolume = resetSettings.GameplayVolume;
+        currentSettings.BossSfxVolume = resetSettings.BossSfxVolume;
         currentSettings.SfxVolume = resetSettings.SfxVolume;
         currentSettings.MouseSensitivity = resetSettings.MouseSensitivity;
         currentSettings.InvertY = false;
@@ -136,6 +139,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         AudioManager.Instance?.SetMusicVolume(currentSettings.MusicVolume);
         AudioManager.Instance?.SetUiVolume(currentSettings.UiVolume);
         AudioManager.Instance?.SetGameplayVolume(currentSettings.GameplayVolume);
+        AudioManager.Instance?.SetBossSfxVolume(currentSettings.BossSfxVolume);
         ApplyDisplaySettings(currentSettings);
 
         SaveManager.Instance.SaveSettings();
@@ -158,6 +162,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
             _musicVolumeSlider == null ||
             _uiVolumeSlider == null ||
             _gameplayVolumeSlider == null ||
+            _bossSfxVolumeSlider == null ||
             _skipTutorialToggle == null;
 
         if (!needsGeneratedUi)
@@ -233,6 +238,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         _musicVolumeSlider = CreateSlider(contentObject.transform, "MusicVolumeSlider", "MUSIC", 0f, 1f);
         _uiVolumeSlider = CreateSlider(contentObject.transform, "UiVolumeSlider", "UI", 0f, 1f);
         _gameplayVolumeSlider = CreateSlider(contentObject.transform, "GameplayVolumeSlider", "GAMEPLAY", 0f, 1f);
+        _bossSfxVolumeSlider = CreateSlider(contentObject.transform, "BossSfxVolumeSlider", "BOSS", 0f, 1f);
         _sensitivitySlider = CreateSlider(contentObject.transform, "SensitivitySlider", "MOUSE", 0.1f, 4f);
         _fullscreenToggle = CreateToggle(contentObject.transform, "FullscreenToggle", "FULLSCREEN");
         _skipTutorialToggle = CreateToggle(contentObject.transform, "SkipTutorialToggle", "SKIP TUTORIAL");
@@ -409,6 +415,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         if (_musicVolumeSlider != null) _musicVolumeSlider.SetValueWithoutNotify(settings.MusicVolume);
         if (_uiVolumeSlider != null) _uiVolumeSlider.SetValueWithoutNotify(settings.UiVolume);
         if (_gameplayVolumeSlider != null) _gameplayVolumeSlider.SetValueWithoutNotify(settings.GameplayVolume);
+        if (_bossSfxVolumeSlider != null) _bossSfxVolumeSlider.SetValueWithoutNotify(settings.BossSfxVolume);
         if (_sensitivitySlider != null) _sensitivitySlider.SetValueWithoutNotify(settings.MouseSensitivity);
         if (_fullscreenToggle != null) _fullscreenToggle.SetIsOnWithoutNotify(settings.Fullscreen);
         if (_skipTutorialToggle != null) _skipTutorialToggle.SetIsOnWithoutNotify(settings.SkipTutorial);
@@ -421,6 +428,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         if (_musicVolumeSlider != null) _musicVolumeSlider.onValueChanged.AddListener(OnMusicVolumeChanged);
         if (_uiVolumeSlider != null) _uiVolumeSlider.onValueChanged.AddListener(OnUiVolumeChanged);
         if (_gameplayVolumeSlider != null) _gameplayVolumeSlider.onValueChanged.AddListener(OnGameplayVolumeChanged);
+        if (_bossSfxVolumeSlider != null) _bossSfxVolumeSlider.onValueChanged.AddListener(OnBossSfxVolumeChanged);
     }
 
     private void UnregisterLiveCallbacks()
@@ -428,6 +436,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         if (_musicVolumeSlider != null) _musicVolumeSlider.onValueChanged.RemoveListener(OnMusicVolumeChanged);
         if (_uiVolumeSlider != null) _uiVolumeSlider.onValueChanged.RemoveListener(OnUiVolumeChanged);
         if (_gameplayVolumeSlider != null) _gameplayVolumeSlider.onValueChanged.RemoveListener(OnGameplayVolumeChanged);
+        if (_bossSfxVolumeSlider != null) _bossSfxVolumeSlider.onValueChanged.RemoveListener(OnBossSfxVolumeChanged);
     }
 
     private void OnMusicVolumeChanged(float value)
@@ -446,6 +455,12 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
     {
         _hasUnappliedLiveAudioChanges = true;
         AudioManager.Instance?.SetGameplayVolume(value);
+    }
+
+    private void OnBossSfxVolumeChanged(float value)
+    {
+        _hasUnappliedLiveAudioChanges = true;
+        AudioManager.Instance?.SetBossSfxVolume(value);
     }
 
     private void PlayClickSound()
@@ -474,6 +489,7 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         AudioManager.Instance.SetMusicVolume(settings.MusicVolume);
         AudioManager.Instance.SetUiVolume(settings.UiVolume);
         AudioManager.Instance.SetGameplayVolume(settings.GameplayVolume);
+        AudioManager.Instance.SetBossSfxVolume(settings.BossSfxVolume);
     }
 
     private void ResolveControlReferences()
@@ -489,6 +505,8 @@ public class SettingsMenuController : MonoBehaviour, IMenuHoverAudioProvider
         if (_uiVolumeSlider == null) _uiVolumeSlider = _masterVolumeSlider;
         if (_gameplayVolumeSlider == null) _gameplayVolumeSlider = FindChildComponentByName<Slider>("GameplayVolumeSlider");
         if (_gameplayVolumeSlider == null) _gameplayVolumeSlider = _sfxVolumeSlider;
+        if (_bossSfxVolumeSlider == null) _bossSfxVolumeSlider = FindChildComponentByName<Slider>("BossSfxVolumeSlider");
+        if (_bossSfxVolumeSlider == null) _bossSfxVolumeSlider = FindChildComponentByName<Slider>("BossVolumeSlider");
         if (_sensitivitySlider == null) _sensitivitySlider = FindChildComponentByName<Slider>("SensitivitySlider");
         if (_fullscreenToggle == null) _fullscreenToggle = FindChildComponentByName<Toggle>("FullscreenToggle");
         if (_skipTutorialToggle == null) _skipTutorialToggle = FindChildComponentByName<Toggle>("SkipTutorialToggle");

@@ -20,6 +20,11 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
     [SerializeField] private float _spawnDelay = 0.55f;
     [SerializeField] private AudioClip _attackSoundOverride;
     [SerializeField] [Range(0f, 1f)] private float _attackSoundOverrideVolume = 1f;
+    [SerializeField] private bool _useBossVisualPolish;
+    [SerializeField] private Color _bossRingColor = new(1f, 0.55f, 0.08f, 0.78f);
+    [SerializeField] private Color _bossRingEmissionColor = new(4f, 2.2f, 0.35f, 0.78f);
+    [SerializeField] private Color _bossPulseColor = new(1f, 0.35f, 0.04f, 0.5f);
+    [SerializeField] private float _bossVisualIntensity = 1f;
     //TODO: Need something for starting size of area?
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
@@ -85,6 +90,15 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
         }
     }
 
+    public void ConfigureBossVisualPolish(Color ringColor, Color emissionColor, Color pulseColor, float intensity)
+    {
+        _useBossVisualPolish = true;
+        _bossRingColor = ringColor;
+        _bossRingEmissionColor = emissionColor;
+        _bossPulseColor = pulseColor;
+        _bossVisualIntensity = Mathf.Max(0.1f, intensity);
+    }
+
     // ── IAttackModule implementation ────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -113,6 +127,7 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
     private IEnumerator AttackRoutine()
     {
         _enemyBase?.PlayAttackAnimationOneShot();
+        SpawnBossPrecastPulse();
 
         yield return new WaitForSeconds(Mathf.Max(0f, _spawnDelay));
 
@@ -152,14 +167,40 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
             _effectMaxDistance > 0f ? _effectMaxDistance : MaxAttackRange,
             _expansionSpeed
         );
+
+        if (_useBossVisualPolish)
+        {
+            areaOfEffect.ConfigureBossVisuals(
+                _bossRingColor,
+                _bossRingEmissionColor,
+                _bossPulseColor,
+                _bossVisualIntensity,
+                0.008f * _bossVisualIntensity);
+        }
+    }
+
+    private void SpawnBossPrecastPulse()
+    {
+        if (!_useBossVisualPolish)
+            return;
+
+        BossAttackVfx.SpawnImpactPulse(
+            GetAreaOfEffectPosition(),
+            2.4f * _bossVisualIntensity,
+            _bossPulseColor,
+            Mathf.Clamp(_spawnDelay, 0.18f, 0.45f),
+            0f);
     }
 
     private void PlayAttackSound()
     {
-        if (_attackSoundOverride != null)
-            AudioManager.Instance?.PlaySfx(_attackSoundOverride, _attackSoundOverrideVolume);
+        AudioClip clip = _attackSoundOverride != null ? _attackSoundOverride : _data.GetAttackClip();
+        float volume = _attackSoundOverride != null ? _attackSoundOverrideVolume : _data.AttackVolume;
+
+        if (_useBossVisualPolish || (_enemyBase != null && _enemyBase.UsesBossSfxVolume))
+            AudioManager.Instance?.PlayBossSfx(clip, volume);
         else
-            AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+            AudioManager.Instance?.PlaySfx(clip, volume);
     }
 
     private void CachePlayerReference(bool logWarnings)

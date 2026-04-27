@@ -113,6 +113,11 @@ public class MusicManager : MonoBehaviour
     /// <summary>Temporarily replaces normal music with a direct clip, preserving the current source for resume.</summary>
     public void PlayTemporaryClip(AudioClip clip, float targetVolume, float fadeOutDuration, float fadeInDuration)
     {
+        PlayTemporaryClip(clip, targetVolume, fadeOutDuration, fadeInDuration, loop: true);
+    }
+
+    public void PlayTemporaryClip(AudioClip clip, float targetVolume, float fadeOutDuration, float fadeInDuration, bool loop)
+    {
         if (clip == null)
             return;
 
@@ -138,7 +143,8 @@ public class MusicManager : MonoBehaviour
             clip,
             targetVolume,
             Mathf.Max(0.01f, fadeOutDuration),
-            Mathf.Max(0.01f, fadeInDuration)));
+            Mathf.Max(0.01f, fadeInDuration),
+            loop));
     }
 
     /// <summary>Temporarily fades normal music to silence, preserving it for resume.</summary>
@@ -270,7 +276,7 @@ public class MusicManager : MonoBehaviour
         _temporaryMusicCoroutine = null;
     }
 
-    private IEnumerator PlayTemporaryClipRoutine(AudioClip clip, float targetVolume, float fadeOutDuration, float fadeInDuration)
+    private IEnumerator PlayTemporaryClipRoutine(AudioClip clip, float targetVolume, float fadeOutDuration, float fadeInDuration, bool loop)
     {
         StabilizeCurrentMusicState();
 
@@ -291,7 +297,7 @@ public class MusicManager : MonoBehaviour
 
         _temporaryMusicSource.Stop();
         _temporaryMusicSource.clip = clip;
-        _temporaryMusicSource.loop = true;
+        _temporaryMusicSource.loop = loop;
         _temporaryMusicSource.volume = 0f;
         _temporaryMusicSource.Play();
 

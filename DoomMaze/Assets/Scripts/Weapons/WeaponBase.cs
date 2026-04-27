@@ -146,6 +146,16 @@ public abstract class WeaponBase : MonoBehaviour, IWeapon
 
     // ── Reload ────────────────────────────────────────────────────────────────
 
+    public void RefillMagazine()
+    {
+        if (_isReloading)
+            StopAllCoroutines();
+
+        _isReloading = false;
+        CurrentAmmo = GetMagazineSize();
+        RaiseAmmoChanged();
+    }
+
     private void TryAutoReload()
     {
         if (string.IsNullOrEmpty(_data.AmmoTypeId)) return;

@@ -109,7 +109,10 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnim
     private IEnumerator AttackRoutine()
     {
         _enemyBase?.PlayAttackAnimationOneShot();
-        AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+        if (_enemyBase != null && _enemyBase.UsesBossSfxVolume)
+            AudioManager.Instance?.PlayBossSfx(_data.GetAttackClip(), _data.AttackVolume);
+        else
+            AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
 
         yield return new WaitForSeconds(Mathf.Max(0f, _impactDelay));
 

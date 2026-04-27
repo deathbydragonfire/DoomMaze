@@ -249,9 +249,10 @@ public class DecayWallController : MonoBehaviour
 
     private void AdvanceWall()
     {
+        float speed = Mathf.Max(0f, _movementSpeed) * BossRoomController.ActiveBossRoomDecayWallSpeedMultiplier;
         _currentTravelDistance = Mathf.Min(
             _maxTravelDistance,
-            _currentTravelDistance + Mathf.Max(0f, _movementSpeed) * Time.deltaTime);
+            _currentTravelDistance + speed * Time.deltaTime);
     }
 
     private void UpdateTransform()

@@ -25,6 +25,8 @@ public class EnemyAreaOfEffect : MonoBehaviour
     private static Mesh _sharedRingMesh;
 
     private GameObject _visual;
+    private Renderer _visualRenderer;
+    private Light _lightComponent;
     private GameObject _owner;
     private Collider[] _ownerColliders;
     private Transform _playerTransform;
@@ -40,6 +42,13 @@ public class EnemyAreaOfEffect : MonoBehaviour
     private float _targetRefreshTimer;
     private bool _isGenerated;
     private bool _hasHitPlayer;
+    private bool _bossVisualsEnabled;
+    private Color _bossRingColor = new(1f, 0.55f, 0.08f, RING_ALPHA);
+    private Color _bossEmissionColor = new(4f, 2.2f, 0.35f, RING_ALPHA);
+    private Color _bossPulseColor = new(1f, 0.35f, 0.04f, 0.5f);
+    private float _bossVisualIntensity = 1f;
+    private float _bossImpactShake;
+    private bool _impactFeedbackPlayed;
 
     public void Generate(
         GameObject owner,
@@ -68,6 +77,30 @@ public class EnemyAreaOfEffect : MonoBehaviour
         EnsureAreaOfEffectTrigger();
     }
 
+    public void ConfigureBossVisuals(Color ringColor, Color emissionColor, Color pulseColor, float intensity, float impactShake)
+    {
+        _bossVisualsEnabled = true;
+        _bossRingColor = ringColor;
+        _bossEmissionColor = emissionColor;
+        _bossPulseColor = pulseColor;
+        _bossVisualIntensity = Mathf.Max(0.1f, intensity);
+        _bossImpactShake = Mathf.Max(0f, impactShake);
+
+        EnsureAreaOfEffectTrigger();
+
+        if (_visualRenderer != null)
+            _visualRenderer.material = CreateMaterial("BossEnemyAreaOfEffect_Ring_Runtime", _bossRingColor, _bossEmissionColor);
+
+        if (_lightComponent == null)
+            _lightComponent = gameObject.AddComponent<Light>();
+
+        _lightComponent.type = LightType.Point;
+        _lightComponent.color = ringColor;
+        _lightComponent.intensity = 3.5f * _bossVisualIntensity;
+        _lightComponent.range = Mathf.Max(4f, _maxDistance * 0.35f);
+        _lightComponent.shadows = LightShadows.None;
+    }
+
     private void Update()
     {
         if (!_isGenerated)
@@ -86,18 +119,19 @@ public class EnemyAreaOfEffect : MonoBehaviour
             _distanceTravelled = Mathf.Min(_maxDistance, _distanceTravelled + stepDistance);
             float visualScale = _distanceTravelled / RING_OUTER_RADIUS;
             transform.localScale = new Vector3(visualScale, 1f, visualScale);
+            UpdateBossVisualPulse();
             TryResolvePlayerAtRing(previousRadius, _distanceTravelled);
         }
         else
         {
-            Destroy(gameObject);
+            DestroyWithFeedback(shake: false);
             return;
         }
 
         _remainingLifetime -= deltaTime;
 
         if (_remainingLifetime <= 0f)
-            Destroy(gameObject);
+            DestroyWithFeedback(shake: false);
     }
 
     public void HandleEnterAreaOfEffect(Collider other)
@@ -138,7 +172,32 @@ public class EnemyAreaOfEffect : MonoBehaviour
             Source = _owner
         });
 
-        Destroy(gameObject);
+        DestroyWithFeedback(shake: true);
+    }
+
+    private void UpdateBossVisualPulse()
+    {
+        if (!_bossVisualsEnabled)
+            return;
+
+        float progress = _maxDistance > 0f ? Mathf.Clamp01(_distanceTravelled / _maxDistance) : 1f;
+        float pulse = 0.65f + Mathf.Sin(Time.time * 18f) * 0.18f + progress * 0.3f;
+
+        if (_visualRenderer != null && _visualRenderer.material != null)
+        {
+            Color ringColor = _bossRingColor;
+            ringColor.a = Mathf.Clamp01(_bossRingColor.a * pulse);
+            if (_visualRenderer.material.HasProperty(BaseColorId))
+                _visualRenderer.material.SetColor(BaseColorId, ringColor);
+            if (_visualRenderer.material.HasProperty(ColorId))
+                _visualRenderer.material.SetColor(ColorId, ringColor);
+        }
+
+        if (_lightComponent != null)
+        {
+            _lightComponent.intensity = Mathf.Lerp(2.5f, 6.5f, progress) * _bossVisualIntensity;
+            _lightComponent.range = Mathf.Max(4f, _distanceTravelled * 0.65f);
+        }
     }
 
     private void CachePlayerTarget()
@@ -209,7 +268,23 @@ public class EnemyAreaOfEffect : MonoBehaviour
             });
         }
 
+        DestroyWithFeedback(shake: true);
+    }
+
+    private void DestroyWithFeedback(bool shake)
+    {
+        SpawnImpactFeedback(shake);
         Destroy(gameObject);
+    }
+
+    private void SpawnImpactFeedback(bool shake)
+    {
+        if (!_bossVisualsEnabled || _impactFeedbackPlayed)
+            return;
+
+        _impactFeedbackPlayed = true;
+        float radius = Mathf.Max(2f, _distanceTravelled);
+        BossAttackVfx.SpawnImpactPulse(transform.position, radius, _bossPulseColor, 0.24f, shake ? _bossImpactShake : 0f);
     }
 
     private void EnsureAreaOfEffectTrigger()
@@ -227,8 +302,15 @@ public class EnemyAreaOfEffect : MonoBehaviour
             MeshRenderer meshRenderer = _visual.GetComponent<MeshRenderer>();
             if (meshRenderer != null)
                 meshRenderer.sharedMaterial = GetSharedMaterial();
+            _visualRenderer = meshRenderer;
 
             transform.localScale = new Vector3(0f, 1f, 0f);
+        }
+        else if (_visual == null || _visualRenderer == null)
+        {
+            Transform visualTransform = transform.Find("Visual");
+            _visual = visualTransform != null ? visualTransform.gameObject : null;
+            _visualRenderer = _visual != null ? _visual.GetComponent<Renderer>() : null;
         }
 
     }
@@ -336,27 +418,42 @@ public class EnemyAreaOfEffect : MonoBehaviour
         if (shader == null)
             return null;
 
-        _sharedMaterial = new Material(shader)
-        {
-            name = "EnemyAreaOfEffect_Ring_Runtime"
-        };
-
         Color baseColor = new Color(1f, 1f, 1f, RING_ALPHA);
         Color emissionColor = new Color(1.2f, 1.2f, 1.2f, RING_ALPHA);
-
-        if (_sharedMaterial.HasProperty(BaseColorId))
-            _sharedMaterial.SetColor(BaseColorId, baseColor);
-
-        if (_sharedMaterial.HasProperty(ColorId))
-            _sharedMaterial.SetColor(ColorId, baseColor);
-
-        if (_sharedMaterial.HasProperty(EmissionColorId))
-            _sharedMaterial.SetColor(EmissionColorId, emissionColor);
-
-        ConfigureTransparentMaterial(_sharedMaterial);
+        _sharedMaterial = CreateMaterial("EnemyAreaOfEffect_Ring_Runtime", baseColor, emissionColor);
         _sharedMaterial.hideFlags = HideFlags.HideAndDontSave;
 
         return _sharedMaterial;
+    }
+
+    private static Material CreateMaterial(string materialName, Color baseColor, Color emissionColor)
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Color");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            return null;
+
+        Material material = new(shader)
+        {
+            name = materialName
+        };
+
+        if (material.HasProperty(BaseColorId))
+            material.SetColor(BaseColorId, baseColor);
+
+        if (material.HasProperty(ColorId))
+            material.SetColor(ColorId, baseColor);
+
+        if (material.HasProperty(EmissionColorId))
+            material.SetColor(EmissionColorId, emissionColor);
+
+        ConfigureTransparentMaterial(material);
+        return material;
     }
 
     private static void ConfigureTransparentMaterial(Material material)

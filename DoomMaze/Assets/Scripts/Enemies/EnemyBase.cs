@@ -27,6 +27,7 @@ public class EnemyBase : MonoBehaviour
     private const float MinimumHitboxRadius = 0.65f;
     private const float MinimumHitboxHeight = 2.4f;
     private const float NavMeshSpawnSampleDistance = 4f;
+    private const float ChaseTargetNavMeshSampleDistance = 8f;
     private const float StuckRecoveryDelay = 1.25f;
     private const float StuckMoveThresholdSqr = 0.0004f;
 
@@ -51,6 +52,7 @@ public class EnemyBase : MonoBehaviour
     public EnemyData Data => _data;
     public bool IsAlive => _healthComponent.IsAlive;
     public bool IsGrappled { get; private set; }
+    public bool UsesBossSfxVolume { get; private set; }
     public Transform PlayerTransform { get; private set; }
 
     private NavMeshAgent _agent;
@@ -77,6 +79,7 @@ public class EnemyBase : MonoBehaviour
     private Vector3 _lastStuckCheckPosition;
     private float _stuckTimer;
     private bool _isShowingWalkAnimation;
+    private bool _deathAnimationCompletionRaised;
     private int _lineOfSightMask;
 
     private void Awake()
@@ -161,6 +164,11 @@ public class EnemyBase : MonoBehaviour
         IsGrappled = grappled;
     }
 
+    public void SetUseBossSfxVolume(bool useBossSfxVolume)
+    {
+        UsesBossSfxVolume = useBossSfxVolume;
+    }
+
     /// <summary>
     /// Forces the enemy into the Hurt state for <paramref name="duration"/> seconds,
     /// suppressing the normal 0.4s timer. Used by the grapple pull landing.
@@ -177,7 +185,7 @@ public class EnemyBase : MonoBehaviour
         _isShowingWalkAnimation = false;
         // _billboard?.SetSpriteAnimation(_data?.HurtSprites, loop: false);
         SetAnimation(_data?.HurtAnimTrigger, _data?.HurtSprites, loop: false);
-        AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
+        PlayEnemySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
     }
 
     public void ApplyExplosionKnockback(Vector3 impulse)
@@ -253,6 +261,35 @@ public class EnemyBase : MonoBehaviour
 
         if (CurrentState == EnemyState.Attack)
             SetState(PlayerTransform != null ? EnemyState.Chase : EnemyState.Idle);
+    }
+
+    public void ForceDeathAnimationNow()
+    {
+        CurrentState = EnemyState.Dead;
+        IsGrappled = false;
+        _isShowingWalkAnimation = false;
+        _attacksDisabledUntil = float.PositiveInfinity;
+        _deathAnimationCompletionRaised = false;
+
+        StopAllCoroutines();
+        StopAgent();
+        if (_agent != null)
+            _agent.enabled = false;
+        SetDeathCollisionEnabled(false);
+
+        if (_animator != null)
+        {
+            _animator.speed = 1f;
+            InterruptAttackTriggersForOneShot(_data?.DeathAnimTrigger);
+            TriggerModelAnimation(_data?.DeathAnimTrigger);
+            bool freezeAtEnd = _freezeAnimatorAfterDeathAnimation &&
+                               !string.IsNullOrWhiteSpace(_data?.DeathAnimTrigger);
+            StartCoroutine(OnCompleteModelAnimationOneShot(OnDeathAnimationComplete, freezeAtEnd));
+        }
+        else
+        {
+            _billboard?.SetSpriteAnimationOneShot(_data?.DeathSprites, OnDeathAnimationComplete);
+        }
     }
 
     private IEnumerator OnCompleteModelAnimationOneShot(Action onComplete, bool freezeAtEnd)
@@ -336,7 +373,7 @@ public class EnemyBase : MonoBehaviour
             return;
 
         if (PlayerTransform != null)
-            _distanceToPlayer = Vector3.Distance(transform.position, PlayerTransform.position);
+            _distanceToPlayer = GetPlanarDistanceToPlayer();
 
         bool canDetectPlayer = CanDetectPlayer();
         bool shouldPursuePlayer = ShouldPursuePlayer(canDetectPlayer);
@@ -468,6 +505,7 @@ public class EnemyBase : MonoBehaviour
     private bool IsAttackUsable(IAttackModule module)
     {
         return module != null &&
+               (!(module is Behaviour behaviour) || behaviour.enabled) &&
                _distanceToPlayer > module.MinAttackRange &&
                _distanceToPlayer <= module.MaxAttackRange &&
                (!(module is IConditionalAttackModule conditional) || conditional.CanStartAttack);
@@ -573,7 +611,7 @@ public class EnemyBase : MonoBehaviour
                 _alertTimer = AlertDwellTime;
                 _isShowingWalkAnimation = false;
                 SetWalkAnimation(false);
-                AudioManager.Instance?.PlaySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
+                PlayEnemySfx(_data != null ? _data.GetAggroClip() : null, _data != null ? _data.AggroVolume : 1f);
                 break;
 
             case EnemyState.Chase:
@@ -599,7 +637,7 @@ public class EnemyBase : MonoBehaviour
                 _isShowingWalkAnimation = false;
                 // _billboard?.SetSpriteAnimation(_data?.HurtSprites, loop: false);
                 SetAnimation(_data?.HurtAnimTrigger, _data?.HurtSprites, loop: false);
-                AudioManager.Instance?.PlaySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
+                PlayEnemySfx(_data != null ? _data.GetHurtClip() : null, _data != null ? _data.HurtVolume : 1f);
                 break;
 
             case EnemyState.Dead:
@@ -609,9 +647,17 @@ public class EnemyBase : MonoBehaviour
                 _isShowingWalkAnimation = false;
                 // _billboard?.SetSpriteAnimationOneShot(_data?.DeathSprites, OnDeathAnimationComplete);
                 SetAnimationOneShot(_data?.DeathAnimTrigger, _data?.DeathSprites, OnDeathAnimationComplete);
-                AudioManager.Instance?.PlaySfx(_data != null ? _data.GetDeathClip() : null, _data != null ? _data.DeathVolume : 1f);
+                PlayEnemySfx(_data != null ? _data.GetDeathClip() : null, _data != null ? _data.DeathVolume : 1f);
                 break;
         }
+    }
+
+    private void PlayEnemySfx(AudioClip clip, float volume)
+    {
+        if (UsesBossSfxVolume)
+            AudioManager.Instance?.PlayBossSfx(clip, volume);
+        else
+            AudioManager.Instance?.PlaySfx(clip, volume);
     }
 
     private void OnDeath()
@@ -657,6 +703,11 @@ public class EnemyBase : MonoBehaviour
 
     private void OnDeathAnimationComplete()
     {
+        if (_deathAnimationCompletionRaised)
+            return;
+
+        _deathAnimationCompletionRaised = true;
+
         EventBus<EnemyDeathAnimationCompletedEvent>.Raise(new EnemyDeathAnimationCompletedEvent
         {
             Enemy = gameObject,
@@ -698,6 +749,7 @@ public class EnemyBase : MonoBehaviour
         _attacksDisabledUntil = 0f;
         _chaseInsteadOfAttackUntil = 0f;
         _nextChaseInsteadOfAttackDecisionAt = 0f;
+        _deathAnimationCompletionRaised = false;
         SetWalkAnimation(false);
     }
 
@@ -810,6 +862,8 @@ public class EnemyBase : MonoBehaviour
 
     private void SetChaseDestination(Vector3 destination)
     {
+        destination = GetChaseDestination(destination);
+
         if (TrySetAgentDestination(destination))
         {
             if (!_isShowingWalkAnimation)
@@ -826,6 +880,28 @@ public class EnemyBase : MonoBehaviour
                 SetWalkAnimation(false);
             }
         }
+    }
+
+    private float GetPlanarDistanceToPlayer()
+    {
+        if (PlayerTransform == null)
+            return float.PositiveInfinity;
+
+        Vector3 toPlayer = PlayerTransform.position - transform.position;
+        toPlayer.y = 0f;
+        return toPlayer.magnitude;
+    }
+
+    private Vector3 GetChaseDestination(Vector3 targetPosition)
+    {
+        if (NavMesh.SamplePosition(targetPosition, out NavMeshHit targetHit, ChaseTargetNavMeshSampleDistance, NavMesh.AllAreas))
+            return targetHit.position;
+
+        Vector3 planarTarget = new(targetPosition.x, transform.position.y, targetPosition.z);
+        if (NavMesh.SamplePosition(planarTarget, out NavMeshHit planarHit, NavMeshSpawnSampleDistance, NavMesh.AllAreas))
+            return planarHit.position;
+
+        return planarTarget;
     }
 
     private bool TryPlaceAgentOnNavMesh(float sampleDistance)

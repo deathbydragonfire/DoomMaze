@@ -6,6 +6,7 @@ using UnityEditor;
 #endif
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.Video;
 
 /// <summary>
 /// Consumes the tree produced by MapGenerator and instantiates room prefabs
@@ -22,6 +23,7 @@ public class MazePopulator : MonoBehaviour
     private const string RoomSplashFontPath = "Assets/Fonts/Unutterable_Font_1_07/TrueType (.ttf)/Unutterable-Regular SDF 1.asset";
     private const string BossTeleportSoundPath = "Assets/Audio/Enemies/ESM_HG_Cinematic_FX_whoosh_ghostly_teleport_03.wav";
     private const string BossSummonSoundPath = "Assets/Audio/Enemies/ESM_MU_FX_liquid_whoosh_summon_large_deep_creature_02.wav";
+    private const string BossIntroCutsceneVideoPath = "Assets/Animations/Cutscenes/IntroSceneBoss.mp4";
 
     // -------------------------------------------------------------------------
     // Serialized prefab lists
@@ -67,6 +69,7 @@ public class MazePopulator : MonoBehaviour
     [SerializeField] private Door generatedDoorPrefab;
     [SerializeField] private AudioClip bossTeleportSound;
     [SerializeField] private AudioClip bossSummonSound;
+    [SerializeField] private VideoClip bossIntroCutsceneVideo;
     [SerializeField] [Range(0f, 1f)] private float waveSurvivalRoomChance = 0.3f;
     [SerializeField] private Vector3 generatedDoorScale = new(8f, 5f, 0.5f);
     [SerializeField] private float generatedDoorVerticalOffset = 2.5f;
@@ -77,6 +80,7 @@ public class MazePopulator : MonoBehaviour
     [Header("Eliminate All Defaults")]
     [SerializeField] private int eliminateEnemyCount = 18;
     [SerializeField] private int eliminateBossCount = 1;
+    [SerializeField] private int bossPhaseCount = 3;
     [SerializeField] private float eliminateSpawnDuration = 8f;
     [SerializeField] [Range(0f, 1f)] private float eliminateMeleeWeight = 0.85f;
 
@@ -617,6 +621,9 @@ public class MazePopulator : MonoBehaviour
 
         if (bossSummonSound == null)
             bossSummonSound = AssetDatabase.LoadAssetAtPath<AudioClip>(BossSummonSoundPath);
+
+        if (bossIntroCutsceneVideo == null)
+            bossIntroCutsceneVideo = AssetDatabase.LoadAssetAtPath<VideoClip>(BossIntroCutsceneVideoPath);
 #endif
     }
 
@@ -683,7 +690,9 @@ public class MazePopulator : MonoBehaviour
                 roomSplashFont,
                 bossTeleportSound,
                 bossSummonSound,
-                eliminateBossCount);
+                eliminateBossCount,
+                bossPhaseCount,
+                bossIntroCutsceneVideo);
         }
     }
 

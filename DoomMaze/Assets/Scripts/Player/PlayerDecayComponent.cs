@@ -63,6 +63,7 @@ public class PlayerDecayComponent : MonoBehaviour
         if (_decayNormalized > 0f)
         {
             float drainMultiplier = Mathf.Max(0f, GameDifficultyManager.CurrentProfile.DecayRateMultiplier);
+            drainMultiplier *= BossRoomController.ActiveBossRoomPlayerDecayMultiplier;
             float drainRate = drainMultiplier / Mathf.Max(0.01f, _fullDrainDuration);
             _decayNormalized = Mathf.Max(0f, _decayNormalized - drainRate * Time.deltaTime);
         }
