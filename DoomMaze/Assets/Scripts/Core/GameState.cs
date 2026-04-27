@@ -5,6 +5,7 @@ public enum GameState
     MainMenu,
     Loading,
     Playing,
+    Cinematic,
     Paused,
     Dead,
     Victory

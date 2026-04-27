@@ -1,3 +1,4 @@
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
 /// <summary>
 /// Contract that every registered debug console command must implement.
 /// Commands are matched by <see cref="Id"/> against the first token of user input.
@@ -15,3 +16,4 @@ public interface IDebugCommand
     /// <param name="console">Console reference for printing feedback.</param>
     void Execute(string[] args, DebugConsole console);
 }
+#endif

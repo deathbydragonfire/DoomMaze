@@ -498,6 +498,12 @@ public class EnemyBase : MonoBehaviour
 
     private void OnDeathAnimationComplete()
     {
+        EventBus<EnemyDeathAnimationCompletedEvent>.Raise(new EnemyDeathAnimationCompletedEvent
+        {
+            Enemy = gameObject,
+            EnemyId = _data != null ? _data.EnemyId : string.Empty
+        });
+
         TryDropLoot();
         gameObject.SetActive(false);
     }

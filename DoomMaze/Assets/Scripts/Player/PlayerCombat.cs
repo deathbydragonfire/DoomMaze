@@ -157,7 +157,13 @@ public class PlayerCombat : MonoBehaviour
     private void OnGameStateChanged(GameStateChangedEvent e)
     {
         if (e.NewState == GameState.Playing)
+        {
             TryBindInput();
+            return;
+        }
+
+        CancelCombatInput();
+        UnbindInput();
     }
 
     private void TryBindInput()

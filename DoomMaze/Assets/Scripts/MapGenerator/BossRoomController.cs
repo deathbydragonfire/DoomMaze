@@ -60,6 +60,13 @@ public class BossRoomController : MonoBehaviour
     [SerializeField] private Color _clearedFogColor = new(0.05f, 0.85f, 0.18f, 1f);
     [SerializeField] private float _clearedFogCrossfadeDuration = 1.5f;
 
+    [Header("Victory Cinematic")]
+    [SerializeField] private float _victoryCameraIntroDuration = 1.1f;
+    [SerializeField] private float _victoryCameraOrbitRadius = 18f;
+    [SerializeField] private float _victoryCameraOrbitHeight = 8f;
+    [SerializeField] private float _victoryCameraOrbitDegreesPerSecond = 16f;
+    [SerializeField] private float _victoryAnimationFallbackDuration = 7f;
+
     private readonly List<Vector3> _spawnCandidates = new();
     private readonly List<Vector3> _doorPositions = new();
     private readonly List<float> _playableLocalHeights = new();
@@ -79,7 +86,9 @@ public class BossRoomController : MonoBehaviour
     private Bounds _localBounds;
     private Coroutine _combatRoutine;
     private Coroutine _splashRoutine;
+    private Coroutine _victoryRoutine;
     private Transform _playerTransform;
+    private GameObject _splashCanvasObject;
     private GameObject _timerCanvasObject;
     private RectTransform _timerRect;
     private TextMeshProUGUI _timerLabel;
@@ -91,11 +100,19 @@ public class BossRoomController : MonoBehaviour
     private bool _armed;
     private bool _wasOutsideEntry = true;
     private bool _loggedMissingSpawnPoint;
+    private bool _victoryDeathAnimationComplete;
+    private GameObject _victoryTargetBoss;
     private float _entryActivationStartedAt = -1f;
     private float _minimumSpawnSpacing = 5f;
     private int _spawnedCount;
 
     public BossRoomObjective Objective => _objective;
+
+    private sealed class BehaviourEnabledState
+    {
+        public Behaviour Behaviour;
+        public bool WasEnabled;
+    }
 
     private sealed class RuntimeDoor
     {
@@ -108,11 +125,13 @@ public class BossRoomController : MonoBehaviour
     private void OnEnable()
     {
         EventBus<EnemyDiedEvent>.Subscribe(OnEnemyDied);
+        EventBus<EnemyDeathAnimationCompletedEvent>.Subscribe(OnEnemyDeathAnimationCompleted);
     }
 
     private void OnDisable()
     {
         EventBus<EnemyDiedEvent>.Unsubscribe(OnEnemyDied);
+        EventBus<EnemyDeathAnimationCompletedEvent>.Unsubscribe(OnEnemyDeathAnimationCompleted);
 
         if (_activeRoom == this)
             _activeRoom = null;
@@ -132,6 +151,12 @@ public class BossRoomController : MonoBehaviour
             StopCoroutine(_fogCrossfadeRoutine);
             _fogCrossfadeRoutine = null;
             _fogRoutineHost = null;
+        }
+
+        if (_victoryRoutine != null)
+        {
+            StopCoroutine(_victoryRoutine);
+            _victoryRoutine = null;
         }
     }
 
@@ -516,7 +541,15 @@ public class BossRoomController : MonoBehaviour
             return;
 
         if (_objective == BossRoomObjective.EliminateAll)
+        {
+            if (_spawnedCount >= _eliminateBossCount && CountLivingTrackedEnemies() == 0)
+            {
+                CompleteBossVictory(evt.Enemy);
+                return;
+            }
+
             TryCompleteEliminateAll();
+        }
     }
 
     private void TryCompleteEliminateAll()
@@ -562,6 +595,272 @@ public class BossRoomController : MonoBehaviour
         SetDoorsOpen(true);
         ShowProceedSplash();
         SetClearedFogOwner(this);
+    }
+
+    private void CompleteBossVictory(GameObject defeatedBoss)
+    {
+        if (_completed)
+            return;
+
+        _completed = true;
+        if (_activeRoom == this)
+            _activeRoom = null;
+
+        if (_combatRoutine != null)
+        {
+            StopCoroutine(_combatRoutine);
+            _combatRoutine = null;
+        }
+
+        StopRoomSplash();
+
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.Cinematic)
+            GameManager.Instance.SetState(GameState.Cinematic);
+
+        _victoryRoutine = StartCoroutine(BossVictoryRoutine(defeatedBoss));
+    }
+
+    private IEnumerator BossVictoryRoutine(GameObject defeatedBoss)
+    {
+        _victoryTargetBoss = defeatedBoss;
+        _victoryDeathAnimationComplete = false;
+
+        Camera cinematicCamera = Camera.main;
+        if (cinematicCamera != null && defeatedBoss != null)
+            yield return StartCoroutine(OrbitBossUntilDeathAnimationComplete(cinematicCamera, defeatedBoss, () => _victoryDeathAnimationComplete));
+        else
+            yield return WaitForBossDeathAnimationFallback(() => _victoryDeathAnimationComplete);
+
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.Victory)
+            GameManager.Instance.SetState(GameState.Victory);
+
+        _victoryTargetBoss = null;
+        _victoryRoutine = null;
+    }
+
+    private void OnEnemyDeathAnimationCompleted(EnemyDeathAnimationCompletedEvent evt)
+    {
+        if (evt.Enemy != null && evt.Enemy == _victoryTargetBoss)
+            _victoryDeathAnimationComplete = true;
+    }
+
+    private IEnumerator OrbitBossUntilDeathAnimationComplete(Camera cinematicCamera, GameObject defeatedBoss, System.Func<bool> isDeathAnimationComplete)
+    {
+        Transform cameraTransform = cinematicCamera.transform;
+        Vector3 startWorldPosition = cameraTransform.position;
+        Quaternion startWorldRotation = cameraTransform.rotation;
+        float startFov = cinematicCamera.fieldOfView;
+
+        List<BehaviourEnabledState> disabledBehaviours = DisableVictoryCameraBehaviours(cinematicCamera);
+        DisableViewmodelCameras(cinematicCamera, disabledBehaviours);
+
+        Bounds bossBounds = GetWorldBounds(defeatedBoss);
+        Vector3 lookPoint = bossBounds.center;
+        Vector3 orbitCenter = new(lookPoint.x, defeatedBoss.transform.position.y, lookPoint.z);
+        float orbitRadius = Mathf.Max(_victoryCameraOrbitRadius, Mathf.Max(bossBounds.extents.x, bossBounds.extents.z) + 12f);
+        float orbitHeight = Mathf.Max(_victoryCameraOrbitHeight, bossBounds.size.y * 0.45f);
+
+        Vector3 startOffset = Vector3.ProjectOnPlane(startWorldPosition - orbitCenter, Vector3.up);
+        if (startOffset.sqrMagnitude <= 0.001f)
+            startOffset = -defeatedBoss.transform.forward;
+
+        float orbitAngle = Mathf.Atan2(startOffset.z, startOffset.x) * Mathf.Rad2Deg;
+        Vector3 targetPosition = GetOrbitPosition(orbitCenter, orbitAngle, orbitRadius, orbitHeight);
+        Quaternion targetRotation = GetLookRotation(targetPosition, lookPoint, startWorldRotation);
+
+        cameraTransform.SetParent(null, true);
+
+        float introDuration = Mathf.Max(0.01f, _victoryCameraIntroDuration);
+        float elapsed = 0f;
+        while (elapsed < introDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / introDuration));
+            cameraTransform.position = Vector3.Lerp(startWorldPosition, targetPosition, t);
+            cameraTransform.rotation = Quaternion.Slerp(startWorldRotation, targetRotation, t);
+            yield return null;
+        }
+
+        float waiting = 0f;
+        float fallbackDuration = Mathf.Max(0.1f, _victoryAnimationFallbackDuration);
+        while (!isDeathAnimationComplete() && waiting < fallbackDuration)
+        {
+            waiting += Time.deltaTime;
+            orbitAngle += _victoryCameraOrbitDegreesPerSecond * Time.deltaTime;
+            Vector3 position = GetOrbitPosition(orbitCenter, orbitAngle, orbitRadius, orbitHeight);
+            cameraTransform.position = position;
+            cameraTransform.rotation = GetLookRotation(position, lookPoint, cameraTransform.rotation);
+            yield return null;
+        }
+
+        cinematicCamera.fieldOfView = startFov;
+    }
+
+    private IEnumerator WaitForBossDeathAnimationFallback(System.Func<bool> isDeathAnimationComplete)
+    {
+        float elapsed = 0f;
+        float fallbackDuration = Mathf.Max(0.1f, _victoryAnimationFallbackDuration);
+        while (!isDeathAnimationComplete() && elapsed < fallbackDuration)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+    }
+
+    private static Vector3 GetOrbitPosition(Vector3 orbitCenter, float angleDegrees, float radius, float height)
+    {
+        float radians = angleDegrees * Mathf.Deg2Rad;
+        Vector3 horizontal = new(Mathf.Cos(radians), 0f, Mathf.Sin(radians));
+        return orbitCenter + horizontal * radius + Vector3.up * height;
+    }
+
+    private static Quaternion GetLookRotation(Vector3 cameraPosition, Vector3 lookPoint, Quaternion fallback)
+    {
+        Vector3 direction = lookPoint - cameraPosition;
+        if (direction.sqrMagnitude <= 0.001f)
+            return fallback;
+
+        return Quaternion.LookRotation(direction.normalized, Vector3.up);
+    }
+
+    private Bounds GetWorldBounds(GameObject target)
+    {
+        bool hasBounds = false;
+        Bounds bounds = new(target.transform.position + Vector3.up * 2f, new Vector3(4f, 4f, 4f));
+
+        Renderer[] renderers = target.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = renderer.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(renderer.bounds);
+            }
+        }
+
+        if (hasBounds)
+            return bounds;
+
+        Collider[] colliders = target.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider == null)
+                continue;
+
+            if (!hasBounds)
+            {
+                bounds = collider.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(collider.bounds);
+            }
+        }
+
+        return bounds;
+    }
+
+    private List<BehaviourEnabledState> DisableVictoryCameraBehaviours(Camera cinematicCamera)
+    {
+        List<BehaviourEnabledState> states = new();
+
+        if (_playerTransform != null)
+        {
+            AddEnabledBehaviourStates(states, _playerTransform.GetComponentsInChildren<PlayerHeadBob>(true));
+            AddEnabledBehaviourStates(states, _playerTransform.GetComponentsInChildren<CameraSway>(true));
+            AddEnabledBehaviourStates(states, _playerTransform.GetComponentsInChildren<CameraShaker>(true));
+            AddEnabledBehaviourStates(states, _playerTransform.GetComponentsInChildren<FovKick>(true));
+            AddEnabledBehaviourStates(states, _playerTransform.GetComponentsInChildren<ViewmodelController>(true));
+        }
+
+        if (cinematicCamera != null)
+        {
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInParent<PlayerHeadBob>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInParent<CameraSway>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInParent<CameraShaker>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInParent<FovKick>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInParent<ViewmodelController>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInChildren<PlayerHeadBob>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInChildren<CameraSway>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInChildren<CameraShaker>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInChildren<FovKick>(true));
+            AddEnabledBehaviourStates(states, cinematicCamera.GetComponentsInChildren<ViewmodelController>(true));
+        }
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            if (states[i].Behaviour != null)
+                states[i].Behaviour.enabled = false;
+        }
+
+        return states;
+    }
+
+    private void DisableViewmodelCameras(Camera cinematicCamera, List<BehaviourEnabledState> states)
+    {
+        if (_playerTransform == null)
+            return;
+
+        Camera[] cameras = _playerTransform.GetComponentsInChildren<Camera>(true);
+        for (int i = 0; i < cameras.Length; i++)
+        {
+            Camera camera = cameras[i];
+            if (camera == null || camera == cinematicCamera || !camera.enabled)
+                continue;
+
+            AddEnabledBehaviourStates(states, camera);
+            camera.enabled = false;
+        }
+    }
+
+    private static void AddEnabledBehaviourStates<T>(List<BehaviourEnabledState> states, T[] behaviours) where T : Behaviour
+    {
+        if (behaviours == null)
+            return;
+
+        for (int i = 0; i < behaviours.Length; i++)
+            AddEnabledBehaviourStates(states, behaviours[i]);
+    }
+
+    private static void AddEnabledBehaviourStates(List<BehaviourEnabledState> states, Behaviour behaviour)
+    {
+        if (states == null || behaviour == null || !behaviour.enabled)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            if (states[i].Behaviour == behaviour)
+                return;
+        }
+
+        states.Add(new BehaviourEnabledState
+        {
+            Behaviour = behaviour,
+            WasEnabled = behaviour.enabled
+        });
+    }
+
+    private static void RestoreVictoryCameraBehaviours(List<BehaviourEnabledState> states)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            BehaviourEnabledState state = states[i];
+            if (state?.Behaviour != null)
+                state.Behaviour.enabled = state.WasEnabled;
+        }
     }
 
     private void UpdateClearedRoomFogPresence()
@@ -666,8 +965,7 @@ public class BossRoomController : MonoBehaviour
 
     private void ShowRoomSplash()
     {
-        if (_splashRoutine != null)
-            StopCoroutine(_splashRoutine);
+        StopRoomSplash();
 
         string text = "ELIMINATE ALL!";
         Color color = _eliminateSplashColor;
@@ -676,15 +974,30 @@ public class BossRoomController : MonoBehaviour
 
     private void ShowProceedSplash()
     {
-        if (_splashRoutine != null)
-            StopCoroutine(_splashRoutine);
+        StopRoomSplash();
 
         _splashRoutine = StartCoroutine(RoomSplashRoutine("PROCEED", _proceedSplashColor));
+    }
+
+    private void StopRoomSplash()
+    {
+        if (_splashRoutine != null)
+        {
+            StopCoroutine(_splashRoutine);
+            _splashRoutine = null;
+        }
+
+        if (_splashCanvasObject != null)
+        {
+            Destroy(_splashCanvasObject);
+            _splashCanvasObject = null;
+        }
     }
 
     private IEnumerator RoomSplashRoutine(string splashText, Color baseColor)
     {
         GameObject canvasObject = new("EnemyRoomSplashCanvas", typeof(Canvas), typeof(CanvasScaler));
+        _splashCanvasObject = canvasObject;
         Canvas canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 20000;
@@ -741,6 +1054,9 @@ public class BossRoomController : MonoBehaviour
         }
 
         Destroy(canvasObject);
+        if (_splashCanvasObject == canvasObject)
+            _splashCanvasObject = null;
+
         _splashRoutine = null;
     }
 

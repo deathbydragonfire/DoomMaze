@@ -67,6 +67,7 @@ public struct SuperFiredEvent
 // ── Phase 4: Enemy events ─────────────────────────────────────────────────────
 public struct EnemyDamagedEvent { public UnityEngine.GameObject Enemy; public DamageInfo Info; public int CurrentHealth; }
 public struct EnemyDiedEvent    { public UnityEngine.GameObject Enemy; public string EnemyId; }
+public struct EnemyDeathAnimationCompletedEvent { public UnityEngine.GameObject Enemy; public string EnemyId; }
 
 // ── Phase 6: Pickups & World events ──────────────────────────────────────────
 public struct PickupCollectedEvent    { public string PickupId; }

@@ -56,7 +56,10 @@ public class WeaponSwitcher : MonoBehaviour
         {
             TryBindInput();
             TryEquipDefault();
+            return;
         }
+
+        UnbindInput();
     }
 
     private void InitialiseQuickMelee()
