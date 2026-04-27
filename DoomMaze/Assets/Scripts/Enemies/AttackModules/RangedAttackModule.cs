@@ -1,10 +1,11 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
 /// Ranged attack module that spawns a simple projectile toward the player at
 /// intervals defined by <see cref="AttackRate"/>.
 /// </summary>
-public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule
+public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule, IAttackExecutionStatus
 {
     [SerializeField] private float _minAttackRange = 10;
     [SerializeField] private float _maxAttackRange = 12;
@@ -16,6 +17,10 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
     [SerializeField] private Vector3 _muzzleOffset = new Vector3(0f, 0.95f, 0.55f);
     [SerializeField] private float _projectileSpeed = 16f;
     [SerializeField] private float _projectileRadius = 0.22f;
+    [SerializeField] private float _projectileMaxDistance = 0f;
+    [SerializeField] private float _fireDelay = 0.32f;
+    [SerializeField] private AudioClip _attackSoundOverride;
+    [SerializeField] [Range(0f, 1f)] private float _attackSoundOverrideVolume = 1f;
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
@@ -37,12 +42,15 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
     /// <inheritdoc/>
     public string AttackAnimTrigger => _attackAnimTrigger;
 
+    public bool IsExecuting => _attackRoutine != null;
+
     // ── Cached references ─────────────────────────────────────────────────────
 
     private EnemyData _data;
     private EnemyBase _enemyBase;
     private Transform _playerTransform;
     private float _attackTimer;
+    private Coroutine _attackRoutine;
 
     private void Awake()
     {
@@ -68,6 +76,15 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
         CachePlayerReference(logWarnings: true);
     }
 
+    private void OnDisable()
+    {
+        if (_attackRoutine != null)
+        {
+            StopCoroutine(_attackRoutine);
+            _attackRoutine = null;
+        }
+    }
+
     // ── IAttackModule implementation ────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -86,11 +103,28 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
         CachePlayerReference(logWarnings: false);
 
         _attackTimer -= Time.deltaTime;
-        if (_attackTimer <= 0f)
+        if (_attackTimer <= 0f && _attackRoutine == null)
         {
-            FireProjectile();
+            _attackRoutine = StartCoroutine(AttackRoutine());
             _attackTimer = 1f / AttackRate;
         }
+    }
+
+    private IEnumerator AttackRoutine()
+    {
+        _enemyBase?.PlayAttackAnimationOneShot();
+        PlayAttackSound();
+
+        yield return new WaitForSeconds(Mathf.Max(0f, _fireDelay));
+
+        if (_enemyBase == null || !_enemyBase.IsAlive || _enemyBase.CurrentState != EnemyState.Attack || !ReferenceEquals(_enemyBase.CurrentAttack, this))
+        {
+            _attackRoutine = null;
+            yield break;
+        }
+
+        FireProjectile();
+        _attackRoutine = null;
     }
 
     private void FireProjectile()
@@ -115,13 +149,18 @@ public class RangedAttackModule : MonoBehaviour, IAttackModule, IManualAttackAni
             direction.normalized,
             AttackDamage,
             AttackDamageType,
-            MaxAttackRange,
+            _projectileMaxDistance > 0f ? _projectileMaxDistance : MaxAttackRange,
             _projectileSpeed,
             _projectileRadius
         );
+    }
 
-        _enemyBase?.PlayAttackAnimationOneShot();
-        AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+    private void PlayAttackSound()
+    {
+        if (_attackSoundOverride != null)
+            AudioManager.Instance?.PlaySfx(_attackSoundOverride, _attackSoundOverrideVolume);
+        else
+            AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
     }
 
     private void CachePlayerReference(bool logWarnings)

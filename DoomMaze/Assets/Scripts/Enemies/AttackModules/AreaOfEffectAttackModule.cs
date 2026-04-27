@@ -1,10 +1,11 @@
+using System.Collections;
 using Unity.VisualScripting;
 using UnityEngine;
 
 /// <summary>
 /// Area of effect attack module that generates a damaging trigger area at intervals defined by <see cref="AttackRate"/>.
 /// </summary>
-public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule
+public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule, IAttackExecutionStatus
 {
     [SerializeField] private float _minAttackRange = 8;
     [SerializeField] private float _maxAttackRange = 10;
@@ -15,6 +16,10 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
     [SerializeField] private Transform _areaOfEffectPoint;
     [SerializeField] private Vector3 _areaOfEffectOffset = new Vector3(0.25f, 0f, 0.38f);
     [SerializeField] private float _expansionSpeed = 3f;
+    [SerializeField] private float _effectMaxDistance = 0f;
+    [SerializeField] private float _spawnDelay = 0.55f;
+    [SerializeField] private AudioClip _attackSoundOverride;
+    [SerializeField] [Range(0f, 1f)] private float _attackSoundOverrideVolume = 1f;
     //TODO: Need something for starting size of area?
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
@@ -37,12 +42,15 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
     /// <inheritdoc/>
     public string AttackAnimTrigger => _attackAnimTrigger;
 
+    public bool IsExecuting => _attackRoutine != null;
+
     // ── Cached references ─────────────────────────────────────────────────────
 
     private EnemyData _data;
     private EnemyBase _enemyBase;
     private Transform _playerTransform;
     private float _attackTimer;
+    private Coroutine _attackRoutine;
 
     private void Awake()
     {
@@ -68,6 +76,15 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
         CachePlayerReference(logWarnings: true);
     }
 
+    private void OnDisable()
+    {
+        if (_attackRoutine != null)
+        {
+            StopCoroutine(_attackRoutine);
+            _attackRoutine = null;
+        }
+    }
+
     // ── IAttackModule implementation ────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -86,11 +103,28 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
         CachePlayerReference(logWarnings: false);
 
         _attackTimer -= Time.deltaTime;
-        if (_attackTimer <= 0f)
+        if (_attackTimer <= 0f && _attackRoutine == null)
         {
-            GenerateAreaOfEffect();
+            _attackRoutine = StartCoroutine(AttackRoutine());
             _attackTimer = 1f / AttackRate;
         }
+    }
+
+    private IEnumerator AttackRoutine()
+    {
+        _enemyBase?.PlayAttackAnimationOneShot();
+
+        yield return new WaitForSeconds(Mathf.Max(0f, _spawnDelay));
+
+        if (_enemyBase == null || !_enemyBase.IsAlive || _enemyBase.CurrentState != EnemyState.Attack || !ReferenceEquals(_enemyBase.CurrentAttack, this))
+        {
+            _attackRoutine = null;
+            yield break;
+        }
+
+        GenerateAreaOfEffect();
+        PlayAttackSound();
+        _attackRoutine = null;
     }
 
     private void GenerateAreaOfEffect()
@@ -115,12 +149,17 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
             direction.normalized,
             AttackDamage,
             AttackDamageType,
-            MaxAttackRange,
+            _effectMaxDistance > 0f ? _effectMaxDistance : MaxAttackRange,
             _expansionSpeed
         );
+    }
 
-        _enemyBase?.PlayAttackAnimationOneShot();
-        AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+    private void PlayAttackSound()
+    {
+        if (_attackSoundOverride != null)
+            AudioManager.Instance?.PlaySfx(_attackSoundOverride, _attackSoundOverrideVolume);
+        else
+            AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
     }
 
     private void CachePlayerReference(bool logWarnings)
@@ -160,4 +199,3 @@ public class AreaOfEffectAttackModule : MonoBehaviour, IAttackModule, IManualAtt
     }
 #endif
 }
-

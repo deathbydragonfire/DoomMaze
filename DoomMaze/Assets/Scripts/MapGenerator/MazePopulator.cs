@@ -20,6 +20,8 @@ public class MazePopulator : MonoBehaviour
     private const string BossPrefabPath = "Assets/Prefabs/Enemies/Enemy_Boss.prefab";
     private const string GeneratedDoorPrefabPath = "Assets/Prefabs/World/Door.prefab";
     private const string RoomSplashFontPath = "Assets/Fonts/Unutterable_Font_1_07/TrueType (.ttf)/Unutterable-Regular SDF 1.asset";
+    private const string BossTeleportSoundPath = "Assets/Audio/Enemies/ESM_HG_Cinematic_FX_whoosh_ghostly_teleport_03.wav";
+    private const string BossSummonSoundPath = "Assets/Audio/Enemies/ESM_MU_FX_liquid_whoosh_summon_large_deep_creature_02.wav";
 
     // -------------------------------------------------------------------------
     // Serialized prefab lists
@@ -63,6 +65,8 @@ public class MazePopulator : MonoBehaviour
     [SerializeField] private GameObject rangedEnemyPrefab;
     [SerializeField] private GameObject bossPrefab;
     [SerializeField] private Door generatedDoorPrefab;
+    [SerializeField] private AudioClip bossTeleportSound;
+    [SerializeField] private AudioClip bossSummonSound;
     [SerializeField] [Range(0f, 1f)] private float waveSurvivalRoomChance = 0.3f;
     [SerializeField] private Vector3 generatedDoorScale = new(8f, 5f, 0.5f);
     [SerializeField] private float generatedDoorVerticalOffset = 2.5f;
@@ -103,7 +107,11 @@ public class MazePopulator : MonoBehaviour
 
     [Header("Player Start")]
     [SerializeField] private bool placePlayerInStartRoom = true;
+    [Tooltip("Testing shortcut: teleport the player into the generated boss room and start the boss fight immediately.")]
+    [SerializeField] private bool placePlayerInBossRoomForTesting = false;
     [SerializeField] private Vector3 playerStartLocalOffset = new(0f, -8f, 0f);
+    [SerializeField] private Vector3 playerBossRoomLocalOffset = Vector3.zero;
+    [SerializeField] private float playerBossRoomEntryOutsideDistance = 7f;
     [SerializeField] private float playerStartNavMeshSearchRadius = 6f;
     [SerializeField] private float playerStartGroundOffset = 1f;
 
@@ -231,10 +239,18 @@ public class MazePopulator : MonoBehaviour
         ConfigureGeneratedEnemyRooms();
         ConfigureGeneratedBossRooms();
         ConfigureGeneratedUpgradeRooms();
-        if (PlacePlayerAtStartRoom(out Vector3 playerStartPosition))
+        if (PlacePlayerAtBossRoomForTesting(out Vector3 playerStartPosition, out BossRoomController bossRoomController))
+        {
             ArmEnemyRoomsFromPlayerStart(playerStartPosition);
+        }
+        else if (PlacePlayerAtStartRoom(out playerStartPosition))
+        {
+            ArmEnemyRoomsFromPlayerStart(playerStartPosition);
+        }
         else
+        {
             ArmEnemyRoomsFromCurrentPlayer();
+        }
 
         DecayWallController decayWallController = GetComponent<DecayWallController>();
         if (decayWallController != null && decayWallController.DecayEnabled)
@@ -595,6 +611,12 @@ public class MazePopulator : MonoBehaviour
 
         if (roomSplashFont == null)
             roomSplashFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(RoomSplashFontPath);
+
+        if (bossTeleportSound == null)
+            bossTeleportSound = AssetDatabase.LoadAssetAtPath<AudioClip>(BossTeleportSoundPath);
+
+        if (bossSummonSound == null)
+            bossSummonSound = AssetDatabase.LoadAssetAtPath<AudioClip>(BossSummonSoundPath);
 #endif
     }
 
@@ -653,10 +675,14 @@ public class MazePopulator : MonoBehaviour
                 placed.Prefab,
                 objective,
                 bossPrefab,
+                meleeEnemyPrefab,
+                rangedEnemyPrefab,
                 generatedDoorPrefab,
                 generatedDoorScale,
                 generatedDoorVerticalOffset,
                 roomSplashFont,
+                bossTeleportSound,
+                bossSummonSound,
                 eliminateBossCount);
         }
     }
@@ -684,21 +710,111 @@ public class MazePopulator : MonoBehaviour
 
     private bool PlacePlayerAtStartRoom(out Vector3 playerStartPosition)
     {
-        playerStartPosition = default;
-
         if (!placePlayerInStartRoom)
+        {
+            playerStartPosition = default;
             return false;
+        }
+
+        return PlacePlayerAtRoom(
+            MapGenerator.RoomType.Start,
+            playerStartLocalOffset,
+            out playerStartPosition,
+            out _);
+    }
+
+    private bool PlacePlayerAtBossRoomForTesting(
+        out Vector3 playerStartPosition,
+        out BossRoomController bossRoomController)
+    {
+        bossRoomController = null;
+
+        if (!placePlayerInBossRoomForTesting)
+        {
+            playerStartPosition = default;
+            return false;
+        }
+
+        if (!PlacePlayerOutsideBossRoomEntrance(out playerStartPosition, out GameObject bossRoom))
+        {
+            return false;
+        }
+
+        bossRoomController = bossRoom != null ? bossRoom.GetComponent<BossRoomController>() : null;
+        if (bossRoomController == null)
+        {
+            Debug.LogWarning("[MazePopulator] Boss-room test spawn is enabled, but the boss room has no BossRoomController.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool PlacePlayerOutsideBossRoomEntrance(out Vector3 playerStartPosition, out GameObject roomInstance)
+    {
+        playerStartPosition = default;
+        roomInstance = null;
 
         foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
         {
-            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Start)
+            if (instance == null || placed.Node == null || placed.Node.Type != MapGenerator.RoomType.Boss)
                 continue;
 
             GameObject player = GameObject.FindWithTag("Player");
             if (player == null)
                 return false;
 
-            Vector3 startPosition = instance.transform.TransformPoint(playerStartLocalOffset);
+            MazePrefab mazePrefab = placed.Prefab != null ? placed.Prefab : instance.GetComponent<MazePrefab>();
+            if (mazePrefab == null || !mazePrefab.HasEntrySocket)
+                return PlacePlayerAtRoom(MapGenerator.RoomType.Boss, playerBossRoomLocalOffset, out playerStartPosition, out roomInstance);
+
+            MazeSocket entrySocket = mazePrefab.EntrySocket;
+            Vector3 entryForward = entrySocket.Forward.sqrMagnitude > 0.001f ? entrySocket.Forward.normalized : Vector3.back;
+            Vector3 localStart = entrySocket.Position + entryForward * Mathf.Max(0f, playerBossRoomEntryOutsideDistance) + playerBossRoomLocalOffset;
+            Vector3 startPosition = instance.transform.TransformPoint(localStart);
+
+            if (NavMesh.SamplePosition(startPosition, out NavMeshHit hit, playerStartNavMeshSearchRadius, NavMesh.AllAreas))
+                startPosition = hit.position + Vector3.up * playerStartGroundOffset;
+
+            Vector3 worldEntryForward = instance.transform.TransformDirection(entryForward).normalized;
+            if (worldEntryForward.sqrMagnitude <= 0.001f)
+                worldEntryForward = instance.transform.forward;
+
+            Quaternion startRotation = Quaternion.LookRotation(-worldEntryForward, Vector3.up);
+
+            PlayerMovement movement = player.GetComponent<PlayerMovement>();
+            if (movement != null)
+                movement.TeleportTo(startPosition, startRotation);
+            else
+                player.transform.SetPositionAndRotation(startPosition, startRotation);
+
+            playerStartPosition = startPosition;
+            roomInstance = instance;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool PlacePlayerAtRoom(
+        MapGenerator.RoomType roomType,
+        Vector3 localOffset,
+        out Vector3 playerStartPosition,
+        out GameObject roomInstance)
+    {
+        playerStartPosition = default;
+        roomInstance = null;
+
+        foreach ((GameObject instance, PlacedRoom placed) in _spawnedRoomRecords)
+        {
+            if (instance == null || placed.Node == null || placed.Node.Type != roomType)
+                continue;
+
+            GameObject player = GameObject.FindWithTag("Player");
+            if (player == null)
+                return false;
+
+            Vector3 startPosition = instance.transform.TransformPoint(localOffset);
             if (TrySampleNavMeshInsideRoom(instance, startPosition, playerStartNavMeshSearchRadius, out Vector3 sampledStart))
                 startPosition = sampledStart + Vector3.up * playerStartGroundOffset;
 
@@ -711,6 +827,7 @@ public class MazePopulator : MonoBehaviour
                 player.transform.SetPositionAndRotation(startPosition, startRotation);
 
             playerStartPosition = startPosition;
+            roomInstance = instance;
             return true;
         }
 

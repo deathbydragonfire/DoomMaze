@@ -57,7 +57,7 @@ public class EnemyProjectile : MonoBehaviour
         _speed = speed > 0f ? speed : DEFAULT_SPEED;
         _collisionRadius = Mathf.Max(0.05f, collisionRadius);
         _maxDistance = maxDistance > 0f ? maxDistance : DEFAULT_MAX_DISTANCE;
-        _remainingLifetime = DEFAULT_LIFETIME;
+        _remainingLifetime = Mathf.Max(DEFAULT_LIFETIME, (_maxDistance / _speed) + 0.1f);
         _distanceTravelled = 0f;
         _isLaunched = true;
 

@@ -34,6 +34,13 @@ public class EnemyBase : MonoBehaviour
     [SerializeField] private float _knockbackDecay = 18f;
     [SerializeField] private EnemyDeathBurst _deathBurst;
     [SerializeField] private bool _useModelAnimation = false;
+    [SerializeField] private float _attackReselectInterval = 1.25f;
+    [SerializeField] [Range(0f, 1f)] private float _chaseInsteadOfAttackChance = 0f;
+    [SerializeField] private float _chaseInsteadOfAttackDuration = 1.25f;
+    [SerializeField] private float _chaseInsteadOfAttackDecisionInterval = 1.75f;
+    [SerializeField] private bool _deactivateAfterDeathAnimation = true;
+    [SerializeField] private bool _freezeAnimatorAfterDeathAnimation = false;
+    [SerializeField] private bool _staggerOnDamage = true;
 
     private const float AlertDwellTime = 0.3f;
     private const float LeashMultiplier = 1.5f;
@@ -52,14 +59,20 @@ public class EnemyBase : MonoBehaviour
     private Animator _animator;
     private EnemySpriteBillboard _billboard;
     private EnemyHitFlash _hitFlash;
+    private EnemyModelHitFlash _modelHitFlash;
     private Collider[] _deathCollisionColliders;
     private bool[] _deathCollisionInitialEnabled;
 
     private static readonly int AnimParamWalk = Animator.StringToHash("Walk");
+    private const float ModelOneShotTransitionWait = 0.5f;
 
     private float _alertTimer;
     private float _hurtTimer;
     private float _distanceToPlayer;
+    private float _attackReselectTimer;
+    private float _attacksDisabledUntil;
+    private float _chaseInsteadOfAttackUntil;
+    private float _nextChaseInsteadOfAttackDecisionAt;
     private Vector3 _externalVelocity;
     private Vector3 _lastStuckCheckPosition;
     private float _stuckTimer;
@@ -77,6 +90,7 @@ public class EnemyBase : MonoBehaviour
         _animator = GetComponentInChildren<Animator>();
         _billboard = GetComponentInChildren<EnemySpriteBillboard>();
         _hitFlash = GetComponentInChildren<EnemyHitFlash>();
+        _modelHitFlash = GetComponentInChildren<EnemyModelHitFlash>();
         _lineOfSightMask = GetLineOfSightMask();
 
         if (_data == null)
@@ -99,6 +113,8 @@ public class EnemyBase : MonoBehaviour
 
     private void Start()
     {
+        RefreshAttackModules();
+
         GameObject playerObj = GameObject.FindWithTag("Player");
         if (playerObj == null)
             Debug.LogWarning("[EnemyBase] No GameObject with tag 'Player' found in scene.");
@@ -192,7 +208,7 @@ public class EnemyBase : MonoBehaviour
     public void SetAnimation(string animTrigger, Sprite[] frames, bool loop = true)
     {
         if (_useModelAnimation)
-            _animator?.SetTrigger(animTrigger);
+            TriggerModelAnimation(animTrigger);
         else
             _billboard?.SetSpriteAnimation(frames, loop);
     }
@@ -201,8 +217,12 @@ public class EnemyBase : MonoBehaviour
     {
         if (_useModelAnimation)
         {
-            _animator?.SetTrigger(animTrigger);
-            StartCoroutine(OnCompleteModelAnimationOneShot(onComplete));
+            InterruptAttackTriggersForOneShot(animTrigger);
+            TriggerModelAnimation(animTrigger);
+            bool freezeAtEnd = _freezeAnimatorAfterDeathAnimation &&
+                               !string.IsNullOrWhiteSpace(animTrigger) &&
+                               animTrigger == _data?.DeathAnimTrigger;
+            StartCoroutine(OnCompleteModelAnimationOneShot(onComplete, freezeAtEnd));
         }
         else
             _billboard?.SetSpriteAnimationOneShot(frames, onComplete);
@@ -215,8 +235,8 @@ public class EnemyBase : MonoBehaviour
             if (_animator == null || CurrentAttack == null)
                 return;
 
-            _animator.SetTrigger(CurrentAttack.AttackAnimTrigger);
-            StartCoroutine(OnCompleteModelAnimationOneShot(RestorePostAttackAnimation));
+            TriggerModelAnimation(CurrentAttack.AttackAnimTrigger);
+            StartCoroutine(OnCompleteModelAnimationOneShot(RestorePostAttackAnimation, freezeAtEnd: false));
         }
         else
         {
@@ -227,17 +247,87 @@ public class EnemyBase : MonoBehaviour
         }
     }
 
-    private IEnumerator OnCompleteModelAnimationOneShot(Action onComplete)
+    public void DisableAttacksFor(float duration)
+    {
+        _attacksDisabledUntil = Mathf.Max(_attacksDisabledUntil, Time.time + Mathf.Max(0f, duration));
+
+        if (CurrentState == EnemyState.Attack)
+            SetState(PlayerTransform != null ? EnemyState.Chase : EnemyState.Idle);
+    }
+
+    private IEnumerator OnCompleteModelAnimationOneShot(Action onComplete, bool freezeAtEnd)
     {
         if (_animator != null)
         {
-            // Wait one frame so the Animator has evaluated the transition
-            // before sampling the target state's length.
             yield return new WaitForEndOfFrame();
-            yield return new WaitForSeconds(_animator.GetCurrentAnimatorStateInfo(0).length);
+
+            float transitionWait = 0f;
+            while (_animator.IsInTransition(0) && transitionWait < ModelOneShotTransitionWait)
+            {
+                transitionWait += Time.deltaTime;
+                yield return null;
+            }
+
+            AnimatorStateInfo stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+            if (freezeAtEnd)
+            {
+                int stateHash = stateInfo.fullPathHash;
+                float elapsed = 0f;
+                float maxWait = Mathf.Max(0.15f, stateInfo.length * 1.25f);
+
+                while (_animator != null && elapsed < maxWait)
+                {
+                    if (_animator.IsInTransition(0))
+                        break;
+
+                    stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
+                    if (stateInfo.fullPathHash != stateHash || stateInfo.normalizedTime >= 0.98f)
+                        break;
+
+                    elapsed += Time.deltaTime;
+                    yield return null;
+                }
+
+                if (_animator != null)
+                    _animator.speed = 0f;
+            }
+            else
+            {
+                float duration = Mathf.Max(0.15f, stateInfo.length);
+                yield return new WaitForSeconds(duration);
+            }
         }
 
         onComplete?.Invoke();
+    }
+
+    private void TriggerModelAnimation(string animTrigger)
+    {
+        if (_animator == null || string.IsNullOrWhiteSpace(animTrigger))
+            return;
+
+        _animator.SetTrigger(animTrigger);
+    }
+
+    private void InterruptAttackTriggersForOneShot(string animTrigger)
+    {
+        if (_animator == null)
+            return;
+
+        _animator.SetBool(AnimParamWalk, false);
+
+        if (_attackModules != null)
+        {
+            for (int i = 0; i < _attackModules.Length; i++)
+            {
+                string attackTrigger = _attackModules[i]?.AttackAnimTrigger;
+                if (!string.IsNullOrWhiteSpace(attackTrigger) && attackTrigger != animTrigger)
+                    _animator.ResetTrigger(attackTrigger);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_data?.HurtAnimTrigger) && _data.HurtAnimTrigger != animTrigger)
+            _animator.ResetTrigger(_data.HurtAnimTrigger);
     }
 
     private void TickStateMachine()
@@ -278,13 +368,20 @@ public class EnemyBase : MonoBehaviour
         {
             StopAgent();
 
-            if (!canAttackPlayer)
+            if (IsCurrentAttackExecuting())
+            {
+                CurrentAttack?.Tick();
+                return;
+            }
+
+            if (!canAttackPlayer || ShouldChaseInsteadOfAttack())
             {
                 SetState(shouldPursuePlayer ? EnemyState.Chase : EnemyState.Idle);
                 return;
             }
 
             CurrentAttack?.Tick();
+            TryReselectAttack();
 
             return;
         }
@@ -293,6 +390,16 @@ public class EnemyBase : MonoBehaviour
         {
             if (canAttackPlayer)
             {
+                if (ShouldChaseInsteadOfAttack())
+                {
+                    if (CurrentState != EnemyState.Chase)
+                        SetState(EnemyState.Chase);
+                    else
+                        SetChaseDestination(PlayerTransform.position);
+
+                    return;
+                }
+
                 SetState(EnemyState.Attack);
                 return;
             }
@@ -338,9 +445,15 @@ public class EnemyBase : MonoBehaviour
         if (PlayerTransform == null || _data == null)
             return false;
 
-        if (CurrentAttack == null || _distanceToPlayer < CurrentAttack.MinAttackRange || _distanceToPlayer > CurrentAttack.MaxAttackRange)
+        if (IsCurrentAttackExecuting())
+            return true;
+
+        if (Time.time < _attacksDisabledUntil)
+            return false;
+
+        if (!IsAttackUsable(CurrentAttack))
         {
-            IAttackModule[] inRangeAttacks = _attackModules.Where(module => _distanceToPlayer > module.MinAttackRange && _distanceToPlayer <= module.MaxAttackRange).ToArray();
+            IAttackModule[] inRangeAttacks = _attackModules.Where(IsAttackUsable).ToArray();
             CurrentAttack = inRangeAttacks.Length > 0 ? inRangeAttacks[Random.Range(0, inRangeAttacks.Length)] : null;
 
             return false;
@@ -350,6 +463,41 @@ public class EnemyBase : MonoBehaviour
             return canDetectPlayer;
 
         return shouldPursuePlayer;
+    }
+
+    private bool IsAttackUsable(IAttackModule module)
+    {
+        return module != null &&
+               _distanceToPlayer > module.MinAttackRange &&
+               _distanceToPlayer <= module.MaxAttackRange &&
+               (!(module is IConditionalAttackModule conditional) || conditional.CanStartAttack);
+    }
+
+    private bool IsCurrentAttackExecuting()
+    {
+        return CurrentAttack is IAttackExecutionStatus executionStatus && executionStatus.IsExecuting;
+    }
+
+    private bool ShouldChaseInsteadOfAttack()
+    {
+        if (PlayerTransform == null || _data == null)
+            return false;
+
+        if (Time.time < _chaseInsteadOfAttackUntil)
+            return true;
+
+        if (_chaseInsteadOfAttackChance <= 0f || _chaseInsteadOfAttackDuration <= 0f)
+            return false;
+
+        if (Time.time < _nextChaseInsteadOfAttackDecisionAt)
+            return false;
+
+        _nextChaseInsteadOfAttackDecisionAt = Time.time + Mathf.Max(0.1f, _chaseInsteadOfAttackDecisionInterval);
+        if (Random.value > _chaseInsteadOfAttackChance)
+            return false;
+
+        _chaseInsteadOfAttackUntil = Time.time + Mathf.Max(0.1f, _chaseInsteadOfAttackDuration);
+        return true;
     }
 
     private bool HasLineOfSightToPlayer()
@@ -436,6 +584,7 @@ public class EnemyBase : MonoBehaviour
             case EnemyState.Attack:
                 StopAgent();
                 CurrentAttack.OnAttackEnter();
+                _attackReselectTimer = Mathf.Max(0.1f, _attackReselectInterval);
                 _isShowingWalkAnimation = false;
                 if (CurrentAttack is IManualAttackAnimationModule)
                     SetWalkAnimation(false);
@@ -483,7 +632,17 @@ public class EnemyBase : MonoBehaviour
         if (CurrentState == EnemyState.Dead)
             return;
 
-        _hitFlash?.Flash();
+        if (_hitFlash != null)
+        {
+            _hitFlash.Flash();
+        }
+        else
+        {
+            if (_modelHitFlash == null)
+                _modelHitFlash = GetComponentInChildren<EnemyModelHitFlash>();
+
+            _modelHitFlash?.Flash();
+        }
 
         EventBus<EnemyDamagedEvent>.Raise(new EnemyDamagedEvent
         {
@@ -492,7 +651,7 @@ public class EnemyBase : MonoBehaviour
             CurrentHealth = _healthComponent.CurrentHealth
         });
 
-        if (CurrentState != EnemyState.Hurt)
+        if (_staggerOnDamage && CurrentState != EnemyState.Hurt)
             SetState(EnemyState.Hurt);
     }
 
@@ -505,7 +664,12 @@ public class EnemyBase : MonoBehaviour
         });
 
         TryDropLoot();
-        gameObject.SetActive(false);
+
+        if (_freezeAnimatorAfterDeathAnimation && _animator != null)
+            _animator.speed = 0f;
+
+        if (_deactivateAfterDeathAnimation)
+            gameObject.SetActive(false);
     }
 
     private void ResetForSpawn()
@@ -517,6 +681,8 @@ public class EnemyBase : MonoBehaviour
         _isShowingWalkAnimation = false;
         _externalVelocity = Vector3.zero;
         _lastStuckCheckPosition = transform.position;
+        if (_animator != null)
+            _animator.speed = 1f;
 
         RemoveGrappledStates();
         _healthComponent.ResetHealth();
@@ -528,7 +694,62 @@ public class EnemyBase : MonoBehaviour
 
         CurrentState = EnemyState.Idle;
         CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
+        _attackReselectTimer = Mathf.Max(0.1f, _attackReselectInterval);
+        _attacksDisabledUntil = 0f;
+        _chaseInsteadOfAttackUntil = 0f;
+        _nextChaseInsteadOfAttackDecisionAt = 0f;
         SetWalkAnimation(false);
+    }
+
+    private void RefreshAttackModules()
+    {
+        _attackModules = GetComponents<IAttackModule>();
+        if (_attackModules == null || _attackModules.Length == 0)
+        {
+            CurrentAttack = null;
+            return;
+        }
+
+        bool currentStillAvailable = false;
+        for (int i = 0; i < _attackModules.Length; i++)
+        {
+            if (_attackModules[i] == CurrentAttack)
+            {
+                currentStillAvailable = true;
+                break;
+            }
+        }
+
+        if (!currentStillAvailable)
+            CurrentAttack = _attackModules[Random.Range(0, _attackModules.Length)];
+    }
+
+    private void TryReselectAttack()
+    {
+        if (_attackModules == null || _attackModules.Length <= 1)
+            return;
+
+        if (IsCurrentAttackExecuting())
+            return;
+
+        _attackReselectTimer -= Time.deltaTime;
+        if (_attackReselectTimer > 0f)
+            return;
+
+        _attackReselectTimer = Mathf.Max(0.1f, _attackReselectInterval);
+
+        IAttackModule[] alternatives = _attackModules
+            .Where(module =>
+                module != null &&
+                module != CurrentAttack &&
+                IsAttackUsable(module))
+            .ToArray();
+
+        if (alternatives.Length == 0)
+            return;
+
+        CurrentAttack = alternatives[Random.Range(0, alternatives.Length)];
+        CurrentAttack.OnAttackEnter();
     }
 
     private void RestorePostAttackAnimation()

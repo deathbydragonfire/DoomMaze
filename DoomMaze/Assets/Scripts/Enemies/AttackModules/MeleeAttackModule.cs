@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>Implemented by attack modules that trigger their own attack animations.</summary>
@@ -7,7 +8,7 @@ public interface IManualAttackAnimationModule { }
 /// Melee attack module that validates reach against the cached player collider.
 /// This avoids false negatives from the grunt's own colliders filling overlap queries.
 /// </summary>
-public class MeleeAttackModule : MonoBehaviour, IAttackModule
+public class MeleeAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule, IAttackExecutionStatus
 {
     [SerializeField] private float _minAttackRange = 2;
     [SerializeField] private float _maxAttackRange = 3;
@@ -15,6 +16,7 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     [SerializeField] private float _attackRate = 1;
     [SerializeField] private DamageType _attackDamageType = DamageType.Physical;
     [SerializeField] private string _attackAnimTrigger = "Melee";
+    [SerializeField] private float _impactDelay = 0.35f;
 
     // ── IAttackModule ───────────────────────────────────────────────────────────────
 
@@ -36,6 +38,8 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     /// <inheritdoc/>
     public string AttackAnimTrigger => _attackAnimTrigger;
 
+    public bool IsExecuting => _attackRoutine != null;
+
     // ── Constants ───────────────────────────────────────────────────────────────
 
     private const float ATTACK_HEIGHT_OFFSET = 0.9f;
@@ -49,6 +53,7 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
     private Collider    _playerCollider;
     private IDamageable _playerDamageable;
     private float       _attackTimer;
+    private Coroutine   _attackRoutine;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -68,6 +73,15 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
         CachePlayerReferences(logWarnings: true);
     }
 
+    private void OnDisable()
+    {
+        if (_attackRoutine != null)
+        {
+            StopCoroutine(_attackRoutine);
+            _attackRoutine = null;
+        }
+    }
+
     // ── IAttackModule implementation ────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -85,11 +99,28 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
         CachePlayerReferences(logWarnings: false);
 
         _attackTimer -= Time.deltaTime;
-        if (_attackTimer <= 0f)
+        if (_attackTimer <= 0f && _attackRoutine == null)
         {
-            PerformAttack();
+            _attackRoutine = StartCoroutine(AttackRoutine());
             _attackTimer = 1f / AttackRate;
         }
+    }
+
+    private IEnumerator AttackRoutine()
+    {
+        _enemyBase?.PlayAttackAnimationOneShot();
+        AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
+
+        yield return new WaitForSeconds(Mathf.Max(0f, _impactDelay));
+
+        if (_enemyBase == null || !_enemyBase.IsAlive || _enemyBase.CurrentState != EnemyState.Attack || !ReferenceEquals(_enemyBase.CurrentAttack, this))
+        {
+            _attackRoutine = null;
+            yield break;
+        }
+
+        PerformAttack();
+        _attackRoutine = null;
     }
 
     private void PerformAttack()
@@ -110,8 +141,6 @@ public class MeleeAttackModule : MonoBehaviour, IAttackModule
             Source = gameObject
         });
 
-        _enemyBase?.PlayAttackAnimationOneShot();
-        AudioManager.Instance?.PlaySfx(_data.GetAttackClip(), _data.AttackVolume);
     }
 
     private void CachePlayerReferences(bool logWarnings)

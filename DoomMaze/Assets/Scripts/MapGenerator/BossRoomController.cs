@@ -20,6 +20,8 @@ public class BossRoomController : MonoBehaviour
 
     [Header("Boss Prefabs")]
     [SerializeField] private GameObject _bossPrefab;
+    [SerializeField] private GameObject _summonMeleeEnemyPrefab;
+    [SerializeField] private GameObject _summonRangedEnemyPrefab;
 
     [Header("Eliminate All")]
     [SerializeField] private int _eliminateBossCount = 1;
@@ -55,6 +57,48 @@ public class BossRoomController : MonoBehaviour
     [SerializeField] private Color _eliminateSplashColor = new(1f, 0.08f, 0.02f, 1f);
     [SerializeField] private Color _proceedSplashColor = new(0.25f, 1f, 0.22f, 1f);
 
+    [Header("Boss Audio")]
+    [SerializeField] private AudioClip _bossTeleportSound;
+    [SerializeField] [Range(0f, 1f)] private float _bossTeleportSoundVolume = 1f;
+    [SerializeField] private AudioClip _bossSummonSound;
+    [SerializeField] [Range(0f, 1f)] private float _bossSummonSoundVolume = 1f;
+
+    [Header("Boss Health Bar")]
+    [SerializeField] private Color _bossHealthFillColor = new(1f, 0.08f, 0.02f, 1f);
+    [SerializeField] private Color _bossHealthBackColor = new(0f, 0f, 0f, 0.72f);
+    [SerializeField] private Vector2 _bossHealthBarSize = new(760f, 34f);
+    [SerializeField] private float _bossHealthBarTopOffset = 42f;
+
+    [Header("Boss Intro Cinematic")]
+    [SerializeField] private bool _enableBossIntroCinematic = true;
+    [SerializeField] private float _bossIntroMoveInDuration = 1.4f;
+    [SerializeField] private float _bossIntroHoldDuration = 1.7f;
+    [SerializeField] private float _bossIntroReturnDuration = 1.4f;
+    [SerializeField] private float _bossIntroCameraDistance = 15f;
+    [SerializeField] private float _bossIntroCameraHeight = 7f;
+    [SerializeField] private float _bossIntroCameraFov = 46f;
+    [SerializeField] private float _bossIntroFadeDuration = 2.4f;
+    [SerializeField] private float _bossIntroShakeMagnitude = 0.06f;
+    [SerializeField] private Color _bossIntroTitleColor = new(1f, 0.08f, 0.02f, 1f);
+    [SerializeField] private Color _bossIntroFogPulseColor = new(1f, 0.14f, 0.1f, 1f);
+
+    [Header("Boss Teleport")]
+    [SerializeField] private bool _enableBossTeleport = true;
+    [SerializeField] private float _bossTeleportWhenFartherThan = 34f;
+    [SerializeField] private Vector2 _bossTeleportNearPlayerDistance = new(5f, 9f);
+    [SerializeField] private Vector2 _bossTeleportCooldownRange = new(20f, 30f);
+    [SerializeField] [Range(0f, 1f)] private float _bossTeleportChance = 0.25f;
+    [SerializeField] private float _bossTeleportFadeDuration = 0.28f;
+    [SerializeField] private float _bossTeleportHiddenDuration = 0.18f;
+    [SerializeField] private float _bossPostTeleportAttackLock = 2.5f;
+
+    [Header("Boss Summon Attack")]
+    [SerializeField] private bool _enableBossSummonAttack = true;
+    [SerializeField] private int _bossSummonCount = 5;
+    [SerializeField] private Vector2 _bossSummonCooldownRange = new(16f, 24f);
+    [SerializeField] [Range(0f, 1f)] private float _bossSummonMeleeWeight = 0.6f;
+    [SerializeField] private float _bossSummonFadeDuration = 0.65f;
+
     [Header("Cleared Fog")]
     [SerializeField] private Color _unclearedFogColor = new(0.7f, 0.03f, 0.02f, 1f);
     [SerializeField] private Color _clearedFogColor = new(0.05f, 0.85f, 0.18f, 1f);
@@ -66,6 +110,7 @@ public class BossRoomController : MonoBehaviour
     [SerializeField] private float _victoryCameraOrbitHeight = 8f;
     [SerializeField] private float _victoryCameraOrbitDegreesPerSecond = 16f;
     [SerializeField] private float _victoryAnimationFallbackDuration = 7f;
+    [SerializeField] private float _victoryMinimumCinematicDuration = 2.75f;
 
     private readonly List<Vector3> _spawnCandidates = new();
     private readonly List<Vector3> _doorPositions = new();
@@ -89,6 +134,10 @@ public class BossRoomController : MonoBehaviour
     private Coroutine _victoryRoutine;
     private Transform _playerTransform;
     private GameObject _splashCanvasObject;
+    private GameObject _bossHealthCanvasObject;
+    private Image _bossHealthFillImage;
+    private TextMeshProUGUI _bossHealthLabel;
+    private HealthComponent _bossHealth;
     private GameObject _timerCanvasObject;
     private RectTransform _timerRect;
     private TextMeshProUGUI _timerLabel;
@@ -100,6 +149,7 @@ public class BossRoomController : MonoBehaviour
     private bool _armed;
     private bool _wasOutsideEntry = true;
     private bool _loggedMissingSpawnPoint;
+    private bool _useTestingSpawnFallback;
     private bool _victoryDeathAnimationComplete;
     private GameObject _victoryTargetBoss;
     private float _entryActivationStartedAt = -1f;
@@ -120,6 +170,35 @@ public class BossRoomController : MonoBehaviour
         public Renderer[] Renderers;
         public Collider[] Colliders;
         public Coroutine FadeRoutine;
+    }
+
+    private sealed class ComponentEnabledState
+    {
+        public Behaviour Behaviour;
+        public bool WasEnabled;
+    }
+
+    private sealed class ColliderEnabledState
+    {
+        public Collider Collider;
+        public bool WasEnabled;
+    }
+
+    private sealed class BossIntroRuntimeState
+    {
+        public ComponentEnabledState[] Components;
+        public ColliderEnabledState[] Colliders;
+        public NavMeshAgent Agent;
+        public Vector3 Position;
+    }
+
+    private struct MaterialColorState
+    {
+        public Material Material;
+        public Color BaseColor;
+        public bool HasBaseColor;
+        public Color Color;
+        public bool HasColor;
     }
 
     private void OnEnable()
@@ -158,25 +237,35 @@ public class BossRoomController : MonoBehaviour
             StopCoroutine(_victoryRoutine);
             _victoryRoutine = null;
         }
+
+        StopBossHealthBar();
     }
 
     public void Configure(
         MazePrefab mazePrefab,
         BossRoomObjective objective,
         GameObject bossPrefab,
+        GameObject summonMeleeEnemyPrefab,
+        GameObject summonRangedEnemyPrefab,
         Door doorPrefab,
         Vector3 generatedDoorScale,
         float doorVerticalOffset,
         TMP_FontAsset splashFont,
+        AudioClip bossTeleportSound,
+        AudioClip bossSummonSound,
         int eliminateBossCount)
     {
         _mazePrefab = mazePrefab;
         _objective = objective;
         _bossPrefab = bossPrefab;
+        _summonMeleeEnemyPrefab = summonMeleeEnemyPrefab;
+        _summonRangedEnemyPrefab = summonRangedEnemyPrefab;
         _doorPrefab = doorPrefab;
         _generatedDoorScale = generatedDoorScale;
         _doorVerticalOffset = doorVerticalOffset;
         _splashFont = splashFont;
+        _bossTeleportSound = bossTeleportSound;
+        _bossSummonSound = bossSummonSound;
         _eliminateBossCount = Mathf.Max(0, eliminateBossCount);
 
         _configured = true;
@@ -194,6 +283,18 @@ public class BossRoomController : MonoBehaviour
         _wasOutsideEntry = entryDepth <= _entryOutsideResetDepth;
         _armed = _wasOutsideEntry;
         _entryActivationStartedAt = -1f;
+    }
+
+    public void BeginCombatForTesting()
+    {
+        if (!_configured)
+            return;
+
+        _armed = true;
+        _wasOutsideEntry = true;
+        _useTestingSpawnFallback = true;
+        _entryActivationStartedAt = -1f;
+        StartCombat();
     }
 
     private void Update()
@@ -369,12 +470,22 @@ public class BossRoomController : MonoBehaviour
             yield break;
         }
 
-        SpawnBoss();
+        bool spawnedBoss = SpawnBoss(out GameObject boss, showHealthBar: !_enableBossIntroCinematic);
+        if (spawnedBoss && boss != null && _enableBossIntroCinematic)
+            yield return StartCoroutine(BossIntroCinematicRoutine(boss));
+
         TryCompleteEliminateAll();
     }
 
     private bool SpawnBoss()
     {
+        return SpawnBoss(out _, showHealthBar: true);
+    }
+
+    private bool SpawnBoss(out GameObject boss, bool showHealthBar)
+    {
+        boss = null;
+
         if (_activeRoom != this || !_started || _completed)
             return false;
 
@@ -382,7 +493,8 @@ public class BossRoomController : MonoBehaviour
         if (prefab == null)
             return false;
 
-        if (!TryPickSpawnPosition(out Vector3 position))
+        if (!TryPickSpawnPosition(out Vector3 position) &&
+            (!_useTestingSpawnFallback || !TryPickTestingSpawnPosition(out position)))
         {
             if (!_loggedMissingSpawnPoint)
             {
@@ -390,22 +502,767 @@ public class BossRoomController : MonoBehaviour
                 _loggedMissingSpawnPoint = true;
             }
 
+            if (_useTestingSpawnFallback)
+                return false;
+
             _spawnedCount++;
             TryCompleteEliminateAll();
             return false;
         }
 
         Quaternion rotation = Quaternion.LookRotation(GetDirectionToRoomCenter(position), Vector3.up);
-        GameObject boss = Instantiate(prefab, position, rotation, transform);
+        boss = Instantiate(prefab, position, rotation, transform);
 
         NavMeshAgent agent = boss.GetComponent<NavMeshAgent>();
         if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
+        {
             agent.Warp(position);
+        }
+        else if (_useTestingSpawnFallback && agent != null && agent.enabled)
+        {
+            agent.enabled = false;
+            Debug.LogWarning($"[BossRoomController] Spawned test boss for {gameObject.name} without NavMesh support. The boss may be stationary, but can still be killed for victory-screen testing.", boss);
+        }
 
         _trackedEnemies.Add(boss);
+        if (showHealthBar)
+            ShowBossHealthBar(boss);
+
+        ConfigureBossModelHitFlash(boss);
+        ConfigureBossTeleport(boss);
+        ConfigureBossSummonAttack(boss);
         RememberSpawnPosition(position);
         _spawnedCount++;
         return true;
+    }
+
+    private IEnumerator BossIntroCinematicRoutine(GameObject boss)
+    {
+        if (boss == null)
+            yield break;
+
+        BossIntroRuntimeState bossState = PrepareBossForIntro(boss);
+        MaterialColorState[] materialStates = CacheMaterialColorStates(boss.GetComponentsInChildren<Renderer>(true));
+        ApplyMaterialColor(materialStates, Color.white);
+
+        StopRoomSplash();
+        StopBossHealthBar();
+
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.Cinematic)
+            GameManager.Instance.SetState(GameState.Cinematic);
+
+        AudioManager.Instance?.PlaySfx(_bossSummonSound, _bossSummonSoundVolume);
+
+        Camera cinematicCamera = Camera.main;
+        Coroutine fadeRoutine = StartCoroutine(BossIntroFadeRoutine(materialStates));
+        Coroutine fogRoutine = StartCoroutine(BossIntroFogPulseRoutine());
+        Coroutine ringRoutine = StartCoroutine(BossIntroGroundRingRoutine(boss));
+        Coroutine titleRoutine = StartCoroutine(BossIntroTitleRoutine(GetBossIntroTitle(boss)));
+
+        if (cinematicCamera != null)
+            yield return StartCoroutine(BossIntroCameraRoutine(cinematicCamera, boss));
+        else
+            yield return new WaitForSeconds(GetBossIntroTotalDuration());
+
+        if (fadeRoutine != null)
+            yield return fadeRoutine;
+
+        RestoreMaterialColor(materialStates);
+
+        if (ringRoutine != null)
+            yield return ringRoutine;
+        if (titleRoutine != null)
+            yield return titleRoutine;
+        if (fogRoutine != null)
+            yield return fogRoutine;
+
+        if (boss != null && !_completed)
+        {
+            ReleaseBossAfterIntro(bossState);
+            ShowBossHealthBar(boss);
+        }
+
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState == GameState.Cinematic)
+            GameManager.Instance.SetState(GameState.Playing);
+    }
+
+    private BossIntroRuntimeState PrepareBossForIntro(GameObject boss)
+    {
+        BossIntroRuntimeState state = new()
+        {
+            Position = boss != null ? boss.transform.position : Vector3.zero,
+            Agent = boss != null ? boss.GetComponent<NavMeshAgent>() : null
+        };
+
+        List<ComponentEnabledState> componentStates = new();
+        AddIntroComponentState(componentStates, state.Agent);
+        AddIntroComponentState(componentStates, boss != null ? boss.GetComponent<EnemyBase>() : null);
+
+        if (boss != null)
+        {
+            IAttackModule[] attackModules = boss.GetComponents<IAttackModule>();
+            for (int i = 0; i < attackModules.Length; i++)
+            {
+                if (attackModules[i] is Behaviour behaviour)
+                    AddIntroComponentState(componentStates, behaviour);
+            }
+
+            AddIntroComponentState(componentStates, boss.GetComponent<BossTeleportAbility>());
+            AddIntroComponentState(componentStates, boss.GetComponent<BossSummonAttackModule>());
+        }
+
+        state.Components = componentStates.ToArray();
+        for (int i = 0; i < state.Components.Length; i++)
+        {
+            if (state.Components[i].Behaviour != null)
+                state.Components[i].Behaviour.enabled = false;
+        }
+
+        Collider[] colliders = boss != null ? boss.GetComponentsInChildren<Collider>(true) : System.Array.Empty<Collider>();
+        List<ColliderEnabledState> colliderStates = new();
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            Collider collider = colliders[i];
+            if (collider == null || collider.isTrigger)
+                continue;
+
+            colliderStates.Add(new ColliderEnabledState
+            {
+                Collider = collider,
+                WasEnabled = collider.enabled
+            });
+
+            collider.enabled = false;
+        }
+
+        state.Colliders = colliderStates.ToArray();
+        return state;
+    }
+
+    private static void AddIntroComponentState(List<ComponentEnabledState> states, Behaviour behaviour)
+    {
+        if (states == null || behaviour == null)
+            return;
+
+        for (int i = 0; i < states.Count; i++)
+        {
+            if (states[i].Behaviour == behaviour)
+                return;
+        }
+
+        states.Add(new ComponentEnabledState
+        {
+            Behaviour = behaviour,
+            WasEnabled = behaviour.enabled
+        });
+    }
+
+    private void ReleaseBossAfterIntro(BossIntroRuntimeState state)
+    {
+        if (state == null)
+            return;
+
+        if (state.Colliders != null)
+        {
+            for (int i = 0; i < state.Colliders.Length; i++)
+            {
+                ColliderEnabledState colliderState = state.Colliders[i];
+                if (colliderState?.Collider != null)
+                    colliderState.Collider.enabled = colliderState.WasEnabled;
+            }
+        }
+
+        if (state.Components != null)
+        {
+            for (int i = 0; i < state.Components.Length; i++)
+            {
+                ComponentEnabledState componentState = state.Components[i];
+                if (componentState?.Behaviour != null)
+                    componentState.Behaviour.enabled = componentState.WasEnabled;
+            }
+        }
+
+        if (state.Agent != null && state.Agent.enabled && state.Agent.isOnNavMesh)
+            state.Agent.Warp(state.Position);
+    }
+
+    private IEnumerator BossIntroFadeRoutine(MaterialColorState[] materialStates)
+    {
+        float duration = Mathf.Max(0.01f, _bossIntroFadeDuration);
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+            LerpMaterialColor(materialStates, Color.white, t);
+            yield return null;
+        }
+    }
+
+    private IEnumerator BossIntroCameraRoutine(Camera cinematicCamera, GameObject boss)
+    {
+        Transform cameraTransform = cinematicCamera.transform;
+        Transform startParent = cameraTransform.parent;
+        int startSiblingIndex = startParent != null ? cameraTransform.GetSiblingIndex() : -1;
+        Vector3 startWorldPosition = cameraTransform.position;
+        Quaternion startWorldRotation = cameraTransform.rotation;
+        Vector3 startLocalPosition = cameraTransform.localPosition;
+        Quaternion startLocalRotation = cameraTransform.localRotation;
+        float startFov = cinematicCamera.fieldOfView;
+
+        List<BehaviourEnabledState> disabledBehaviours = DisableVictoryCameraBehaviours(cinematicCamera);
+        DisableViewmodelCameras(cinematicCamera, disabledBehaviours);
+
+        Bounds bossBounds = GetWorldBounds(boss);
+        Vector3 lookPoint = bossBounds.center;
+        Vector3 targetPosition = GetBossIntroCameraPosition(startWorldPosition, boss.transform.position, bossBounds);
+        Quaternion targetRotation = GetLookRotation(targetPosition, lookPoint, startWorldRotation);
+        float targetFov = Mathf.Clamp(_bossIntroCameraFov, 25f, 80f);
+
+        cameraTransform.SetParent(null, true);
+
+        try
+        {
+            float elapsed = 0f;
+            float moveInDuration = Mathf.Max(0.01f, _bossIntroMoveInDuration);
+            while (elapsed < moveInDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / moveInDuration));
+                Vector3 basePosition = Vector3.Lerp(startWorldPosition, targetPosition, t);
+                cameraTransform.position = basePosition + GetBossIntroShakeOffset(1f - t);
+                cameraTransform.rotation = Quaternion.Slerp(startWorldRotation, targetRotation, t);
+                cinematicCamera.fieldOfView = Mathf.Lerp(startFov, targetFov, t);
+                yield return null;
+            }
+
+            elapsed = 0f;
+            float holdDuration = Mathf.Max(0f, _bossIntroHoldDuration);
+            while (elapsed < holdDuration)
+            {
+                elapsed += Time.deltaTime;
+                float shakeT = 1f - Mathf.Clamp01(elapsed / Mathf.Max(0.01f, holdDuration));
+                cameraTransform.position = targetPosition + GetBossIntroShakeOffset(shakeT);
+                cameraTransform.rotation = GetLookRotation(cameraTransform.position, lookPoint, targetRotation);
+                cinematicCamera.fieldOfView = targetFov;
+                yield return null;
+            }
+
+            Vector3 returnStartPosition = cameraTransform.position;
+            Quaternion returnStartRotation = cameraTransform.rotation;
+            float returnStartFov = cinematicCamera.fieldOfView;
+            elapsed = 0f;
+            float returnDuration = Mathf.Max(0.01f, _bossIntroReturnDuration);
+            while (elapsed < returnDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / returnDuration));
+                cameraTransform.position = Vector3.Lerp(returnStartPosition, startWorldPosition, t);
+                cameraTransform.rotation = Quaternion.Slerp(returnStartRotation, startWorldRotation, t);
+                cinematicCamera.fieldOfView = Mathf.Lerp(returnStartFov, startFov, t);
+                yield return null;
+            }
+        }
+        finally
+        {
+            cameraTransform.SetParent(startParent, true);
+            if (startSiblingIndex >= 0)
+                cameraTransform.SetSiblingIndex(startSiblingIndex);
+
+            cameraTransform.localPosition = startLocalPosition;
+            cameraTransform.localRotation = startLocalRotation;
+            cinematicCamera.fieldOfView = startFov;
+
+            RestoreVictoryCameraBehaviours(disabledBehaviours);
+        }
+    }
+
+    private Vector3 GetBossIntroCameraPosition(Vector3 startPosition, Vector3 bossPosition, Bounds bossBounds)
+    {
+        Vector3 toStart = Vector3.ProjectOnPlane(startPosition - bossPosition, Vector3.up);
+        if (toStart.sqrMagnitude <= 0.001f)
+            toStart = -transform.forward;
+
+        Vector3 direction = toStart.normalized;
+        float distance = Mathf.Max(_bossIntroCameraDistance, Mathf.Max(bossBounds.extents.x, bossBounds.extents.z) + 8f);
+        float height = Mathf.Max(_bossIntroCameraHeight, bossBounds.size.y * 0.55f);
+        return bossPosition + direction * distance + Vector3.up * height;
+    }
+
+    private Vector3 GetBossIntroShakeOffset(float intensity)
+    {
+        float magnitude = Mathf.Max(0f, _bossIntroShakeMagnitude) * Mathf.Clamp01(intensity);
+        if (magnitude <= 0f)
+            return Vector3.zero;
+
+        Vector2 random = Random.insideUnitCircle * magnitude;
+        return new Vector3(random.x, random.y, 0f);
+    }
+
+    private IEnumerator BossIntroTitleRoutine(string titleText)
+    {
+        GameObject canvasObject = new("BossIntroTitleCanvas", typeof(Canvas), typeof(CanvasScaler));
+        Canvas canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 21000;
+
+        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        GameObject titleObject = new("BossIntroTitle", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        titleObject.transform.SetParent(canvasObject.transform, false);
+
+        RectTransform rect = titleObject.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        TextMeshProUGUI label = titleObject.GetComponent<TextMeshProUGUI>();
+        label.raycastTarget = false;
+        label.alignment = TextAlignmentOptions.Center;
+        label.enableAutoSizing = true;
+        label.fontSizeMin = 72f;
+        label.fontSizeMax = Mathf.Max(120f, _splashMaxFontSize);
+        label.fontStyle = FontStyles.UpperCase;
+        label.text = titleText;
+        if (_splashFont != null)
+            label.font = _splashFont;
+
+        float duration = GetBossIntroTotalDuration();
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / Mathf.Max(0.01f, duration));
+            float fadeIn = Mathf.Clamp01(t / 0.18f);
+            float fadeOut = Mathf.Clamp01((t - 0.72f) / 0.28f);
+            float alpha = Mathf.Lerp(0f, 1f, fadeIn) * Mathf.Lerp(1f, 0f, fadeOut);
+            float scale = Mathf.Lerp(0.72f, 1.05f, EaseOutBack(fadeIn)) + Mathf.Sin(t * Mathf.PI * 12f) * 0.015f;
+
+            rect.localScale = Vector3.one * scale;
+            label.color = new Color(_bossIntroTitleColor.r, _bossIntroTitleColor.g, _bossIntroTitleColor.b, alpha);
+            yield return null;
+        }
+
+        Destroy(canvasObject);
+    }
+
+    private IEnumerator BossIntroFogPulseRoutine()
+    {
+        StopActiveFogCrossfade();
+        RenderSettings.fog = true;
+
+        Color startColor = RenderSettings.fogColor;
+        Color pulseColor = _bossIntroFogPulseColor;
+        Color endColor = _unclearedFogColor;
+        float duration = Mathf.Max(0.01f, GetBossIntroTotalDuration());
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float pulse = Mathf.Sin(t * Mathf.PI);
+            RenderSettings.fogColor = Color.Lerp(Color.Lerp(startColor, endColor, t), pulseColor, pulse * 0.65f);
+            yield return null;
+        }
+
+        RenderSettings.fogColor = endColor;
+        _currentFogTarget = endColor;
+        _hasFogTarget = true;
+    }
+
+    private static void StopActiveFogCrossfade()
+    {
+        if (_fogRoutineHost != null && _fogCrossfadeRoutine != null)
+            _fogRoutineHost.StopCoroutine(_fogCrossfadeRoutine);
+
+        _fogRoutineHost = null;
+        _fogCrossfadeRoutine = null;
+    }
+
+    private IEnumerator BossIntroGroundRingRoutine(GameObject boss)
+    {
+        if (boss == null)
+            yield break;
+
+        Bounds bounds = GetWorldBounds(boss);
+        GameObject ringObject = new("BossIntroSummonRing", typeof(LineRenderer));
+        LineRenderer line = ringObject.GetComponent<LineRenderer>();
+        ConfigureBossIntroRing(line);
+
+        const int segments = 96;
+        line.positionCount = segments + 1;
+        line.useWorldSpace = false;
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = (float)i / segments * Mathf.PI * 2f;
+            line.SetPosition(i, new Vector3(Mathf.Cos(angle), 0.035f, Mathf.Sin(angle)));
+        }
+
+        Vector3 ringPosition = new(bounds.center.x, boss.transform.position.y + 0.05f, bounds.center.z);
+        ringObject.transform.position = ringPosition;
+
+        float startRadius = Mathf.Max(1.5f, Mathf.Max(bounds.extents.x, bounds.extents.z) * 0.45f);
+        float endRadius = Mathf.Max(startRadius + 4f, Mathf.Max(bounds.extents.x, bounds.extents.z) + 6f);
+        float duration = Mathf.Max(0.01f, _bossIntroMoveInDuration + _bossIntroHoldDuration);
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float radius = Mathf.Lerp(startRadius, endRadius, Mathf.SmoothStep(0f, 1f, t));
+            float alpha = Mathf.Sin(t * Mathf.PI);
+            Color ringColor = new(1f, 1f, 1f, alpha * 0.85f);
+            ringObject.transform.localScale = new Vector3(radius, 1f, radius);
+            line.startColor = ringColor;
+            line.endColor = ringColor;
+            if (line.material != null)
+                SetMaterialColor(line.material, ringColor);
+
+            yield return null;
+        }
+
+        Destroy(ringObject);
+    }
+
+    private static void ConfigureBossIntroRing(LineRenderer line)
+    {
+        if (line == null)
+            return;
+
+        line.loop = true;
+        line.widthMultiplier = 0.18f;
+        line.numCapVertices = 4;
+        line.numCornerVertices = 4;
+        line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        line.receiveShadows = false;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Color");
+
+        if (shader != null)
+        {
+            Material material = new(shader)
+            {
+                name = "BossIntroSummonRing_Runtime",
+                color = Color.white
+            };
+            PrepareMaterialForFade(material);
+            line.material = material;
+        }
+    }
+
+    private static void SetMaterialColor(Material material, Color color)
+    {
+        if (material == null)
+            return;
+
+        material.color = color;
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", color);
+    }
+
+    private string GetBossIntroTitle(GameObject boss)
+    {
+        EnemyBase enemyBase = boss != null ? boss.GetComponent<EnemyBase>() : null;
+        string displayName = enemyBase != null && enemyBase.Data != null ? enemyBase.Data.DisplayName : null;
+        return string.IsNullOrWhiteSpace(displayName) ? "BOSS" : displayName.ToUpperInvariant();
+    }
+
+    private float GetBossIntroTotalDuration()
+    {
+        return Mathf.Max(0.01f, _bossIntroMoveInDuration) +
+               Mathf.Max(0f, _bossIntroHoldDuration) +
+               Mathf.Max(0.01f, _bossIntroReturnDuration);
+    }
+
+    private void ConfigureBossModelHitFlash(GameObject boss)
+    {
+        if (boss == null)
+            return;
+
+        if (boss.GetComponentInChildren<EnemyHitFlash>(true) != null)
+            return;
+
+        if (boss.GetComponent<EnemyModelHitFlash>() == null)
+            boss.AddComponent<EnemyModelHitFlash>();
+    }
+
+    private void ConfigureBossTeleport(GameObject boss)
+    {
+        if (!_enableBossTeleport || boss == null)
+            return;
+
+        BossTeleportAbility teleport = boss.GetComponent<BossTeleportAbility>();
+        if (teleport == null)
+            teleport = boss.AddComponent<BossTeleportAbility>();
+
+        teleport.Configure(
+            _bossTeleportWhenFartherThan,
+            _bossTeleportNearPlayerDistance.x,
+            _bossTeleportNearPlayerDistance.y,
+            _bossTeleportCooldownRange.x,
+            _bossTeleportCooldownRange.y,
+            _bossTeleportChance,
+            _bossTeleportFadeDuration,
+            _bossTeleportHiddenDuration,
+            _bossPostTeleportAttackLock,
+            _bossTeleportSound,
+            _bossTeleportSoundVolume);
+    }
+
+    private void ConfigureBossSummonAttack(GameObject boss)
+    {
+        if (!_enableBossSummonAttack || boss == null)
+            return;
+
+        if (_summonMeleeEnemyPrefab == null && _summonRangedEnemyPrefab == null)
+            return;
+
+        BossSummonAttackModule summon = boss.GetComponent<BossSummonAttackModule>();
+        if (summon == null)
+            summon = boss.AddComponent<BossSummonAttackModule>();
+
+        summon.Configure(
+            this,
+            _bossSummonCount,
+            _bossSummonCooldownRange.x,
+            _bossSummonCooldownRange.y,
+            _bossSummonSound,
+            _bossSummonSoundVolume);
+    }
+
+    public bool TrySummonEnemies(GameObject source, int count)
+    {
+        if (!_started || _completed || count <= 0)
+            return false;
+
+        bool spawnedAny = false;
+        for (int i = 0; i < count; i++)
+        {
+            GameObject prefab = PickSummonedEnemyPrefab();
+            if (prefab == null)
+                continue;
+
+            if (!TryPickSummonSpawnPosition(out Vector3 position))
+                continue;
+
+            Quaternion rotation = Quaternion.LookRotation(GetDirectionToRoomCenter(position), Vector3.up);
+            GameObject enemy = Instantiate(prefab, position, rotation, transform);
+            PrepareSummonedEnemy(enemy, position);
+            spawnedAny = true;
+        }
+
+        return spawnedAny;
+    }
+
+    private GameObject PickSummonedEnemyPrefab()
+    {
+        if (_summonMeleeEnemyPrefab == null)
+            return _summonRangedEnemyPrefab;
+
+        if (_summonRangedEnemyPrefab == null)
+            return _summonMeleeEnemyPrefab;
+
+        return Random.value <= _bossSummonMeleeWeight
+            ? _summonMeleeEnemyPrefab
+            : _summonRangedEnemyPrefab;
+    }
+
+    private bool TryPickSummonSpawnPosition(out Vector3 position)
+    {
+        if (TryPickRandomSpawnPosition(rejectNearDoors: true, rejectNearCenter: false, minimumSpacing: 2f, out position))
+            return true;
+
+        if (TryPickRandomSpawnPosition(rejectNearDoors: false, rejectNearCenter: false, minimumSpacing: 0f, out position))
+            return true;
+
+        return TryPickSpawnPosition(out position);
+    }
+
+    private void PrepareSummonedEnemy(GameObject enemy, Vector3 position)
+    {
+        if (enemy == null)
+            return;
+
+        NavMeshAgent agent = enemy.GetComponent<NavMeshAgent>();
+        if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
+            agent.Warp(position);
+
+        EnemyBase enemyBase = enemy.GetComponent<EnemyBase>();
+        if (enemyBase != null)
+            enemyBase.enabled = false;
+
+        IAttackModule[] attackModules = enemy.GetComponents<IAttackModule>();
+        for (int i = 0; i < attackModules.Length; i++)
+        {
+            if (attackModules[i] is MonoBehaviour behaviour)
+                behaviour.enabled = false;
+        }
+
+        if (agent != null)
+            agent.enabled = false;
+
+        Collider[] colliders = enemy.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i] != null && !colliders[i].isTrigger)
+                colliders[i].enabled = false;
+        }
+
+        StartCoroutine(SummonedEnemyFadeInRoutine(enemy, enemyBase, attackModules, agent, colliders, position));
+    }
+
+    private IEnumerator SummonedEnemyFadeInRoutine(
+        GameObject enemy,
+        EnemyBase enemyBase,
+        IAttackModule[] attackModules,
+        NavMeshAgent agent,
+        Collider[] colliders,
+        Vector3 position)
+    {
+        Renderer[] renderers = enemy != null ? enemy.GetComponentsInChildren<Renderer>(true) : null;
+        MaterialColorState[] materialStates = CacheMaterialColorStates(renderers);
+        ApplyMaterialColor(materialStates, Color.white);
+
+        float duration = Mathf.Max(0.01f, _bossSummonFadeDuration);
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = 1f - Mathf.Clamp01(elapsed / duration);
+            LerpMaterialColor(materialStates, Color.white, t);
+            yield return null;
+        }
+
+        RestoreMaterialColor(materialStates);
+
+        if (enemy == null)
+            yield break;
+
+        for (int i = 0; i < colliders.Length; i++)
+        {
+            if (colliders[i] != null && !colliders[i].isTrigger)
+                colliders[i].enabled = true;
+        }
+
+        if (agent != null)
+        {
+            agent.enabled = true;
+            if (agent.isOnNavMesh)
+                agent.Warp(position);
+        }
+
+        if (enemyBase != null)
+            enemyBase.enabled = true;
+
+        for (int i = 0; i < attackModules.Length; i++)
+        {
+            if (attackModules[i] is MonoBehaviour behaviour)
+                behaviour.enabled = true;
+        }
+    }
+
+    private static MaterialColorState[] CacheMaterialColorStates(Renderer[] renderers)
+    {
+        if (renderers == null)
+            return System.Array.Empty<MaterialColorState>();
+
+        List<MaterialColorState> states = new();
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null || renderer is ParticleSystemRenderer)
+                continue;
+
+            Material[] materials = renderer.materials;
+            for (int j = 0; j < materials.Length; j++)
+            {
+                Material material = materials[j];
+                if (material == null)
+                    continue;
+
+                MaterialColorState state = new()
+                {
+                    Material = material,
+                    HasBaseColor = material.HasProperty("_BaseColor"),
+                    HasColor = material.HasProperty("_Color")
+                };
+
+                if (state.HasBaseColor)
+                    state.BaseColor = material.GetColor("_BaseColor");
+                if (state.HasColor)
+                    state.Color = material.GetColor("_Color");
+
+                states.Add(state);
+            }
+        }
+
+        return states.ToArray();
+    }
+
+    private static void LerpMaterialColor(MaterialColorState[] states, Color targetColor, float t)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Length; i++)
+        {
+            MaterialColorState state = states[i];
+            if (state.Material == null)
+                continue;
+
+            if (state.HasBaseColor)
+                state.Material.SetColor("_BaseColor", Color.Lerp(state.BaseColor, targetColor, t));
+            if (state.HasColor)
+                state.Material.SetColor("_Color", Color.Lerp(state.Color, targetColor, t));
+        }
+    }
+
+    private static void ApplyMaterialColor(MaterialColorState[] states, Color color)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Length; i++)
+        {
+            MaterialColorState state = states[i];
+            if (state.Material == null)
+                continue;
+
+            if (state.HasBaseColor)
+                state.Material.SetColor("_BaseColor", color);
+            if (state.HasColor)
+                state.Material.SetColor("_Color", color);
+        }
+    }
+
+    private static void RestoreMaterialColor(MaterialColorState[] states)
+    {
+        if (states == null)
+            return;
+
+        for (int i = 0; i < states.Length; i++)
+        {
+            MaterialColorState state = states[i];
+            if (state.Material == null)
+                continue;
+
+            if (state.HasBaseColor)
+                state.Material.SetColor("_BaseColor", state.BaseColor);
+            if (state.HasColor)
+                state.Material.SetColor("_Color", state.Color);
+        }
     }
 
     private bool TryPickSpawnPosition(out Vector3 position)
@@ -464,6 +1321,63 @@ public class BossRoomController : MonoBehaviour
 
         position = default;
         return false;
+    }
+
+    private bool TryPickTestingSpawnPosition(out Vector3 position)
+    {
+        if (_playerTransform == null)
+        {
+            GameObject player = GameObject.FindWithTag("Player");
+            if (player != null)
+                _playerTransform = player.transform;
+        }
+
+        Vector3 center = transform.TransformPoint(_localBounds.center);
+        Vector3 preferred = center;
+
+        if (_playerTransform != null)
+        {
+            Vector3 awayFromPlayer = Vector3.ProjectOnPlane(center - _playerTransform.position, Vector3.up);
+            if (awayFromPlayer.sqrMagnitude <= 0.001f)
+                awayFromPlayer = _playerTransform.forward;
+
+            preferred = _playerTransform.position + awayFromPlayer.normalized * Mathf.Max(_centerExclusionRadius, 8f);
+        }
+
+        if (TryPickTestingSpawnPositionNear(preferred, out position))
+            return true;
+
+        return TryPickTestingSpawnPositionNear(center, out position);
+    }
+
+    private bool TryPickTestingSpawnPositionNear(Vector3 preferred, out Vector3 position)
+    {
+        if (NavMesh.SamplePosition(preferred, out NavMeshHit navHit, Mathf.Max(8f, _navMeshSampleRadius * 4f), NavMesh.AllAreas) &&
+            IsWithinLocalBounds(navHit.position))
+        {
+            position = navHit.position;
+            return true;
+        }
+
+        Vector3 floorProbe = preferred;
+        if (!IsWithinLocalBounds(floorProbe))
+        {
+            Vector3 local = transform.InverseTransformPoint(floorProbe);
+            local.x = Mathf.Clamp(local.x, _localBounds.min.x, _localBounds.max.x);
+            local.z = Mathf.Clamp(local.z, _localBounds.min.z, _localBounds.max.z);
+            floorProbe = transform.TransformPoint(local);
+        }
+
+        if (TryFindRoomColliderFloor(floorProbe, out Vector3 floorPoint))
+        {
+            position = floorPoint;
+            return true;
+        }
+
+        Vector3 fallbackLocal = transform.InverseTransformPoint(floorProbe);
+        fallbackLocal.y = _playableLocalHeights.Count > 0 ? _playableLocalHeights[0] : _localBounds.center.y;
+        position = transform.TransformPoint(fallbackLocal);
+        return IsWithinLocalBounds(position);
     }
 
     private bool TryPickRandomSpawnPosition(bool rejectNearDoors, bool rejectNearCenter, float minimumSpacing, out Vector3 position)
@@ -542,6 +1456,8 @@ public class BossRoomController : MonoBehaviour
 
         if (_objective == BossRoomObjective.EliminateAll)
         {
+            StopBossHealthBar();
+
             if (_spawnedCount >= _eliminateBossCount && CountLivingTrackedEnemies() == 0)
             {
                 CompleteBossVictory(evt.Enemy);
@@ -593,6 +1509,7 @@ public class BossRoomController : MonoBehaviour
         }
 
         SetDoorsOpen(true);
+        StopBossHealthBar();
         ShowProceedSplash();
         SetClearedFogOwner(this);
     }
@@ -613,6 +1530,7 @@ public class BossRoomController : MonoBehaviour
         }
 
         StopRoomSplash();
+        StopBossHealthBar();
 
         if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.Cinematic)
             GameManager.Instance.SetState(GameState.Cinematic);
@@ -624,12 +1542,17 @@ public class BossRoomController : MonoBehaviour
     {
         _victoryTargetBoss = defeatedBoss;
         _victoryDeathAnimationComplete = false;
+        float cinematicStartedAt = Time.time;
 
         Camera cinematicCamera = Camera.main;
         if (cinematicCamera != null && defeatedBoss != null)
             yield return StartCoroutine(OrbitBossUntilDeathAnimationComplete(cinematicCamera, defeatedBoss, () => _victoryDeathAnimationComplete));
         else
             yield return WaitForBossDeathAnimationFallback(() => _victoryDeathAnimationComplete);
+
+        float remainingMinimumTime = Mathf.Max(0f, _victoryMinimumCinematicDuration - (Time.time - cinematicStartedAt));
+        if (remainingMinimumTime > 0f)
+            yield return new WaitForSeconds(remainingMinimumTime);
 
         if (GameManager.Instance != null && GameManager.Instance.CurrentState != GameState.Victory)
             GameManager.Instance.SetState(GameState.Victory);
@@ -961,6 +1884,124 @@ public class BossRoomController : MonoBehaviour
                Mathf.Abs(a.g - b.g) <= 0.001f &&
                Mathf.Abs(a.b - b.b) <= 0.001f &&
                Mathf.Abs(a.a - b.a) <= 0.001f;
+    }
+
+    private void ShowBossHealthBar(GameObject boss)
+    {
+        StopBossHealthBar();
+
+        if (boss == null)
+            return;
+
+        _bossHealth = boss.GetComponent<HealthComponent>();
+        if (_bossHealth == null)
+            return;
+
+        _bossHealth.OnDamaged += OnBossDamaged;
+        _bossHealth.OnDied += StopBossHealthBar;
+
+        GameObject canvasObject = new("BossHealthCanvas", typeof(Canvas), typeof(CanvasScaler));
+        _bossHealthCanvasObject = canvasObject;
+
+        Canvas canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 19900;
+
+        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        GameObject rootObject = new("BossHealthRoot", typeof(RectTransform));
+        rootObject.transform.SetParent(canvasObject.transform, false);
+        RectTransform root = rootObject.GetComponent<RectTransform>();
+        root.anchorMin = new Vector2(0.5f, 1f);
+        root.anchorMax = new Vector2(0.5f, 1f);
+        root.pivot = new Vector2(0.5f, 1f);
+        root.anchoredPosition = new Vector2(0f, -Mathf.Max(0f, _bossHealthBarTopOffset));
+        root.sizeDelta = new Vector2(Mathf.Max(120f, _bossHealthBarSize.x), Mathf.Max(18f, _bossHealthBarSize.y));
+
+        GameObject backObject = new("Background", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        backObject.transform.SetParent(root, false);
+        RectTransform backRect = backObject.GetComponent<RectTransform>();
+        backRect.anchorMin = Vector2.zero;
+        backRect.anchorMax = Vector2.one;
+        backRect.offsetMin = Vector2.zero;
+        backRect.offsetMax = Vector2.zero;
+        Image backImage = backObject.GetComponent<Image>();
+        backImage.color = _bossHealthBackColor;
+        backImage.raycastTarget = false;
+
+        GameObject fillObject = new("Fill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        fillObject.transform.SetParent(root, false);
+        RectTransform fillRect = fillObject.GetComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = new Vector2(3f, 3f);
+        fillRect.offsetMax = new Vector2(-3f, -3f);
+        _bossHealthFillImage = fillObject.GetComponent<Image>();
+        _bossHealthFillImage.color = _bossHealthFillColor;
+        _bossHealthFillImage.type = Image.Type.Filled;
+        _bossHealthFillImage.fillMethod = Image.FillMethod.Horizontal;
+        _bossHealthFillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
+        _bossHealthFillImage.raycastTarget = false;
+
+        GameObject labelObject = new("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        labelObject.transform.SetParent(root, false);
+        RectTransform labelRect = labelObject.GetComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = Vector2.zero;
+        labelRect.offsetMax = Vector2.zero;
+        _bossHealthLabel = labelObject.GetComponent<TextMeshProUGUI>();
+        _bossHealthLabel.raycastTarget = false;
+        _bossHealthLabel.alignment = TextAlignmentOptions.Center;
+        _bossHealthLabel.fontSize = 24f;
+        _bossHealthLabel.fontStyle = FontStyles.Bold | FontStyles.UpperCase;
+        _bossHealthLabel.color = Color.white;
+        if (_splashFont != null)
+            _bossHealthLabel.font = _splashFont;
+
+        UpdateBossHealthBar();
+    }
+
+    private void OnBossDamaged(DamageInfo info)
+    {
+        UpdateBossHealthBar();
+    }
+
+    private void UpdateBossHealthBar()
+    {
+        if (_bossHealth == null)
+            return;
+
+        int maxHealth = Mathf.Max(1, _bossHealth.MaxHealth);
+        float normalized = Mathf.Clamp01((float)_bossHealth.CurrentHealth / maxHealth);
+
+        if (_bossHealthFillImage != null)
+            _bossHealthFillImage.fillAmount = normalized;
+
+        if (_bossHealthLabel != null)
+            _bossHealthLabel.text = $"BOSS  {_bossHealth.CurrentHealth} / {maxHealth}";
+    }
+
+    private void StopBossHealthBar()
+    {
+        if (_bossHealth != null)
+        {
+            _bossHealth.OnDamaged -= OnBossDamaged;
+            _bossHealth.OnDied -= StopBossHealthBar;
+            _bossHealth = null;
+        }
+
+        _bossHealthFillImage = null;
+        _bossHealthLabel = null;
+
+        if (_bossHealthCanvasObject != null)
+        {
+            Destroy(_bossHealthCanvasObject);
+            _bossHealthCanvasObject = null;
+        }
     }
 
     private void ShowRoomSplash()
@@ -1590,5 +2631,577 @@ public class BossRoomController : MonoBehaviour
         Vector3 center = transform.TransformPoint(_localBounds.center);
         Vector3 offset = Vector3.ProjectOnPlane(position - center, Vector3.up);
         return offset.magnitude < _centerExclusionRadius;
+    }
+}
+
+[DisallowMultipleComponent]
+public class BossTeleportAbility : MonoBehaviour
+{
+    private const float DEFAULT_TELEPORT_DISTANCE = 34f;
+    private const float DEFAULT_MIN_PLAYER_DISTANCE = 5f;
+    private const float DEFAULT_MAX_PLAYER_DISTANCE = 9f;
+    private const float DEFAULT_MIN_COOLDOWN = 20f;
+    private const float DEFAULT_MAX_COOLDOWN = 30f;
+    private const float DEFAULT_CHANCE = 0.25f;
+    private const float DEFAULT_FADE_DURATION = 0.28f;
+    private const float DEFAULT_HIDDEN_DURATION = 0.18f;
+    private const float DEFAULT_POST_TELEPORT_ATTACK_LOCK = 2.5f;
+    private const int TELEPORT_SAMPLE_ATTEMPTS = 16;
+
+    private struct MaterialColorState
+    {
+        public Material Material;
+        public Color BaseColor;
+        public bool HasBaseColor;
+        public Color Color;
+        public bool HasColor;
+        public Color EmissionColor;
+        public bool HasEmissionColor;
+    }
+
+    private struct RendererMaterialState
+    {
+        public Renderer Renderer;
+        public Material[] SharedMaterials;
+    }
+
+    private EnemyBase _enemyBase;
+    private HealthComponent _health;
+    private NavMeshAgent _agent;
+    private Renderer[] _renderers;
+    private Collider[] _colliders;
+    private MaterialColorState[] _materialStates;
+    private RendererMaterialState[] _rendererMaterialStates;
+    private Material _whiteTeleportMaterial;
+
+    private float _teleportDistance = DEFAULT_TELEPORT_DISTANCE;
+    private float _minPlayerDistance = DEFAULT_MIN_PLAYER_DISTANCE;
+    private float _maxPlayerDistance = DEFAULT_MAX_PLAYER_DISTANCE;
+    private float _minCooldown = DEFAULT_MIN_COOLDOWN;
+    private float _maxCooldown = DEFAULT_MAX_COOLDOWN;
+    private float _chance = DEFAULT_CHANCE;
+    private float _fadeDuration = DEFAULT_FADE_DURATION;
+    private float _hiddenDuration = DEFAULT_HIDDEN_DURATION;
+    private float _postTeleportAttackLock = DEFAULT_POST_TELEPORT_ATTACK_LOCK;
+    private AudioClip _teleportSound;
+    private float _teleportSoundVolume = 1f;
+    private float _nextTeleportAt;
+    private bool _isTeleporting;
+    private Coroutine _teleportRoutine;
+
+    public void Configure(
+        float teleportDistance,
+        float minPlayerDistance,
+        float maxPlayerDistance,
+        float minCooldown,
+        float maxCooldown,
+        float chance,
+        float fadeDuration,
+        float hiddenDuration,
+        float postTeleportAttackLock,
+        AudioClip teleportSound,
+        float teleportSoundVolume)
+    {
+        _teleportDistance = Mathf.Max(0f, teleportDistance);
+        _minPlayerDistance = Mathf.Max(0f, minPlayerDistance);
+        _maxPlayerDistance = Mathf.Max(_minPlayerDistance, maxPlayerDistance);
+        _minCooldown = Mathf.Max(0.1f, minCooldown);
+        _maxCooldown = Mathf.Max(_minCooldown, maxCooldown);
+        _chance = Mathf.Clamp01(chance);
+        _fadeDuration = Mathf.Max(0.01f, fadeDuration);
+        _hiddenDuration = Mathf.Max(0f, hiddenDuration);
+        _postTeleportAttackLock = Mathf.Max(0f, postTeleportAttackLock);
+        _teleportSound = teleportSound;
+        _teleportSoundVolume = Mathf.Clamp01(teleportSoundVolume);
+        ScheduleNextTeleport();
+    }
+
+    private void Awake()
+    {
+        _enemyBase = GetComponent<EnemyBase>();
+        _health = GetComponent<HealthComponent>();
+        _agent = GetComponent<NavMeshAgent>();
+        _renderers = GetComponentsInChildren<Renderer>(true);
+        _colliders = GetComponentsInChildren<Collider>(true);
+        CacheMaterialStates();
+        if (_health != null)
+            _health.OnDied += CancelTeleport;
+        ScheduleNextTeleport();
+    }
+
+    private void OnDestroy()
+    {
+        if (_health != null)
+            _health.OnDied -= CancelTeleport;
+    }
+
+    private void OnDisable()
+    {
+        if (_teleportRoutine != null)
+        {
+            StopCoroutine(_teleportRoutine);
+            _teleportRoutine = null;
+        }
+
+        SetRenderersVisible(true);
+        SetCollidersEnabled(true);
+        RestoreRendererMaterials();
+        RestoreMaterialColors();
+        _isTeleporting = false;
+    }
+
+    private void Update()
+    {
+        if (Time.time < _nextTeleportAt)
+            return;
+
+        TryStartTeleport(requireFarDistance: true);
+    }
+
+    private void TryStartTeleport(bool requireFarDistance)
+    {
+        if (_isTeleporting || _health == null || !_health.IsAlive)
+            return;
+
+        Transform player = ResolvePlayerTransform();
+        if (player == null)
+            return;
+
+        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
+        if (requireFarDistance && distanceToPlayer < _teleportDistance)
+            return;
+
+        ScheduleNextTeleport();
+
+        if (Random.value > _chance)
+            return;
+
+        if (TryFindTeleportPosition(player, out Vector3 destination))
+            _teleportRoutine = StartCoroutine(TeleportRoutine(destination, player.position));
+    }
+
+    private Transform ResolvePlayerTransform()
+    {
+        if (_enemyBase != null && _enemyBase.PlayerTransform != null)
+            return _enemyBase.PlayerTransform;
+
+        GameObject player = GameObject.FindWithTag("Player");
+        return player != null ? player.transform : null;
+    }
+
+    private void ScheduleNextTeleport()
+    {
+        _nextTeleportAt = Time.time + Random.Range(_minCooldown, _maxCooldown);
+    }
+
+    private bool TryFindTeleportPosition(Transform player, out Vector3 destination)
+    {
+        float minDistance = Mathf.Min(_minPlayerDistance, _maxPlayerDistance);
+        float maxDistance = Mathf.Max(_minPlayerDistance, _maxPlayerDistance);
+
+        for (int i = 0; i < TELEPORT_SAMPLE_ATTEMPTS; i++)
+        {
+            Vector2 direction2D = Random.insideUnitCircle.normalized;
+            if (direction2D.sqrMagnitude <= 0.001f)
+                direction2D = Vector2.right;
+
+            float distance = Random.Range(minDistance, maxDistance);
+            Vector3 candidate = player.position + new Vector3(direction2D.x, 0f, direction2D.y) * distance;
+
+            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+            {
+                destination = hit.position;
+                return true;
+            }
+        }
+
+        Vector3 behindPlayer = player.position - player.forward * Mathf.Lerp(minDistance, maxDistance, 0.5f);
+        if (NavMesh.SamplePosition(behindPlayer, out NavMeshHit fallbackHit, 8f, NavMesh.AllAreas))
+        {
+            destination = fallbackHit.position;
+            return true;
+        }
+
+        destination = behindPlayer;
+        return true;
+    }
+
+    private IEnumerator TeleportRoutine(Vector3 destination, Vector3 playerPosition)
+    {
+        _isTeleporting = true;
+
+        bool agentWasEnabled = _agent != null && _agent.enabled;
+        bool agentWasStopped = _agent != null && _agent.enabled && _agent.isOnNavMesh && _agent.isStopped;
+
+        if (_agent != null && _agent.enabled && _agent.isOnNavMesh)
+            _agent.isStopped = true;
+
+        AudioManager.Instance?.PlaySfx(_teleportSound, _teleportSoundVolume);
+        SetCollidersEnabled(false);
+        ApplyWhiteMaterialOverride();
+        yield return FadeColor(Color.white, _fadeDuration);
+
+        if (_health == null || !_health.IsAlive)
+        {
+            CancelTeleport();
+            yield break;
+        }
+
+        SetRenderersVisible(false);
+        yield return new WaitForSeconds(_hiddenDuration);
+
+        if (_health == null || !_health.IsAlive)
+        {
+            CancelTeleport();
+            yield break;
+        }
+
+        Quaternion lookRotation = GetLookRotation(destination, playerPosition);
+        if (_agent != null && agentWasEnabled && _agent.enabled && _agent.isOnNavMesh)
+        {
+            _agent.Warp(destination);
+            transform.rotation = lookRotation;
+        }
+        else
+        {
+            transform.SetPositionAndRotation(destination, lookRotation);
+        }
+
+        SetRenderersVisible(true);
+        RestoreRendererMaterials();
+        ApplyColor(Color.white);
+        SetCollidersEnabled(true);
+        _enemyBase?.DisableAttacksFor(_postTeleportAttackLock);
+
+        yield return FadeBack(_fadeDuration);
+
+        if (_agent != null && agentWasEnabled && _agent.enabled && _agent.isOnNavMesh)
+            _agent.isStopped = agentWasStopped;
+
+        _isTeleporting = false;
+        _teleportRoutine = null;
+    }
+
+    private void CancelTeleport()
+    {
+        if (_teleportRoutine != null)
+        {
+            StopCoroutine(_teleportRoutine);
+            _teleportRoutine = null;
+        }
+
+        SetRenderersVisible(true);
+        SetCollidersEnabled(true);
+        RestoreRendererMaterials();
+        RestoreMaterialColors();
+        _isTeleporting = false;
+    }
+
+    private Quaternion GetLookRotation(Vector3 from, Vector3 target)
+    {
+        Vector3 direction = Vector3.ProjectOnPlane(target - from, Vector3.up);
+        return direction.sqrMagnitude > 0.001f ? Quaternion.LookRotation(direction.normalized, Vector3.up) : transform.rotation;
+    }
+
+    private IEnumerator FadeColor(Color targetColor, float duration)
+    {
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            LerpMaterialColors(targetColor, t);
+            yield return null;
+        }
+    }
+
+    private IEnumerator FadeBack(float duration)
+    {
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = 1f - Mathf.Clamp01(elapsed / duration);
+            LerpMaterialColors(Color.white, t);
+            yield return null;
+        }
+
+        RestoreMaterialColors();
+    }
+
+    private void CacheMaterialStates()
+    {
+        List<MaterialColorState> states = new();
+        List<RendererMaterialState> rendererStates = new();
+        for (int i = 0; i < _renderers.Length; i++)
+        {
+            Renderer renderer = _renderers[i];
+            if (renderer == null || renderer is ParticleSystemRenderer)
+                continue;
+
+            rendererStates.Add(new RendererMaterialState
+            {
+                Renderer = renderer,
+                SharedMaterials = renderer.sharedMaterials
+            });
+
+            Material[] materials = renderer.materials;
+            for (int j = 0; j < materials.Length; j++)
+            {
+                Material material = materials[j];
+                if (material == null)
+                    continue;
+
+                MaterialColorState state = new()
+                {
+                    Material = material,
+                    HasBaseColor = material.HasProperty("_BaseColor"),
+                    HasColor = material.HasProperty("_Color"),
+                    HasEmissionColor = material.HasProperty("_EmissionColor")
+                };
+
+                if (state.HasBaseColor)
+                    state.BaseColor = material.GetColor("_BaseColor");
+                if (state.HasColor)
+                    state.Color = material.GetColor("_Color");
+                if (state.HasEmissionColor)
+                    state.EmissionColor = material.GetColor("_EmissionColor");
+
+                states.Add(state);
+            }
+        }
+
+        _materialStates = states.ToArray();
+        _rendererMaterialStates = rendererStates.ToArray();
+    }
+
+    private void LerpMaterialColors(Color targetColor, float t)
+    {
+        if (_materialStates == null)
+            return;
+
+        for (int i = 0; i < _materialStates.Length; i++)
+        {
+            MaterialColorState state = _materialStates[i];
+            if (state.Material == null)
+                continue;
+
+            if (state.HasBaseColor)
+                state.Material.SetColor("_BaseColor", Color.Lerp(state.BaseColor, targetColor, t));
+            if (state.HasColor)
+                state.Material.SetColor("_Color", Color.Lerp(state.Color, targetColor, t));
+            if (state.HasEmissionColor)
+            {
+                state.Material.EnableKeyword("_EMISSION");
+                state.Material.SetColor("_EmissionColor", Color.Lerp(state.EmissionColor, targetColor * 1.3f, t));
+            }
+        }
+    }
+
+    private void ApplyColor(Color color)
+    {
+        if (_materialStates == null)
+            return;
+
+        for (int i = 0; i < _materialStates.Length; i++)
+        {
+            MaterialColorState state = _materialStates[i];
+            if (state.Material == null)
+                continue;
+
+            if (state.HasBaseColor)
+                state.Material.SetColor("_BaseColor", color);
+            if (state.HasColor)
+                state.Material.SetColor("_Color", color);
+            if (state.HasEmissionColor)
+            {
+                state.Material.EnableKeyword("_EMISSION");
+                state.Material.SetColor("_EmissionColor", color * 1.3f);
+            }
+        }
+    }
+
+    private void RestoreMaterialColors()
+    {
+        if (_materialStates == null)
+            return;
+
+        for (int i = 0; i < _materialStates.Length; i++)
+        {
+            MaterialColorState state = _materialStates[i];
+            if (state.Material == null)
+                continue;
+
+            if (state.HasBaseColor)
+                state.Material.SetColor("_BaseColor", state.BaseColor);
+            if (state.HasColor)
+                state.Material.SetColor("_Color", state.Color);
+            if (state.HasEmissionColor)
+                state.Material.SetColor("_EmissionColor", state.EmissionColor);
+        }
+    }
+
+    private void ApplyWhiteMaterialOverride()
+    {
+        if (_rendererMaterialStates == null)
+            return;
+
+        Material whiteMaterial = GetWhiteTeleportMaterial();
+        if (whiteMaterial == null)
+            return;
+
+        for (int i = 0; i < _rendererMaterialStates.Length; i++)
+        {
+            RendererMaterialState state = _rendererMaterialStates[i];
+            if (state.Renderer == null)
+                continue;
+
+            int materialCount = Mathf.Max(1, state.SharedMaterials != null ? state.SharedMaterials.Length : 0);
+            Material[] overrideMaterials = new Material[materialCount];
+            for (int j = 0; j < overrideMaterials.Length; j++)
+                overrideMaterials[j] = whiteMaterial;
+
+            state.Renderer.sharedMaterials = overrideMaterials;
+        }
+    }
+
+    private void RestoreRendererMaterials()
+    {
+        if (_rendererMaterialStates == null)
+            return;
+
+        for (int i = 0; i < _rendererMaterialStates.Length; i++)
+        {
+            RendererMaterialState state = _rendererMaterialStates[i];
+            if (state.Renderer != null && state.SharedMaterials != null)
+                state.Renderer.sharedMaterials = state.SharedMaterials;
+        }
+    }
+
+    private Material GetWhiteTeleportMaterial()
+    {
+        if (_whiteTeleportMaterial != null)
+            return _whiteTeleportMaterial;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Color");
+        if (shader == null)
+            shader = Shader.Find("Standard");
+        if (shader == null)
+            return null;
+
+        _whiteTeleportMaterial = new Material(shader)
+        {
+            color = Color.white
+        };
+
+        if (_whiteTeleportMaterial.HasProperty("_BaseColor"))
+            _whiteTeleportMaterial.SetColor("_BaseColor", Color.white);
+        if (_whiteTeleportMaterial.HasProperty("_Color"))
+            _whiteTeleportMaterial.SetColor("_Color", Color.white);
+        if (_whiteTeleportMaterial.HasProperty("_EmissionColor"))
+        {
+            _whiteTeleportMaterial.EnableKeyword("_EMISSION");
+            _whiteTeleportMaterial.SetColor("_EmissionColor", Color.white * 1.5f);
+        }
+
+        return _whiteTeleportMaterial;
+    }
+
+    private void SetRenderersVisible(bool visible)
+    {
+        if (_renderers == null)
+            return;
+
+        for (int i = 0; i < _renderers.Length; i++)
+        {
+            if (_renderers[i] != null)
+                _renderers[i].enabled = visible;
+        }
+    }
+
+    private void SetCollidersEnabled(bool enabled)
+    {
+        if (_colliders == null)
+            return;
+
+        for (int i = 0; i < _colliders.Length; i++)
+        {
+            if (_colliders[i] != null && !_colliders[i].isTrigger)
+                _colliders[i].enabled = enabled;
+        }
+    }
+}
+
+[DisallowMultipleComponent]
+public class BossSummonAttackModule : MonoBehaviour, IAttackModule, IManualAttackAnimationModule, IConditionalAttackModule
+{
+    [SerializeField] private float _minAttackRange = 0f;
+    [SerializeField] private float _maxAttackRange = 18f;
+    [SerializeField] private string _attackAnimTrigger = "AreaOfEffect";
+
+    private BossRoomController _room;
+    private EnemyBase _enemyBase;
+    private int _summonCount = 5;
+    private float _minCooldown = 16f;
+    private float _maxCooldown = 24f;
+    private AudioClip _summonSound;
+    private float _summonSoundVolume = 1f;
+    private float _nextSummonTime;
+
+    public float MinAttackRange => _minAttackRange;
+    public float MaxAttackRange => _maxAttackRange;
+    public float AttackDamage => 0f;
+    public float AttackRate => 1f / Mathf.Max(0.1f, _minCooldown);
+    public DamageType AttackDamageType => DamageType.Energy;
+    public string AttackAnimTrigger => _attackAnimTrigger;
+    public bool CanStartAttack => Time.time >= _nextSummonTime;
+
+    public void Configure(
+        BossRoomController room,
+        int summonCount,
+        float minCooldown,
+        float maxCooldown,
+        AudioClip summonSound,
+        float summonSoundVolume)
+    {
+        _room = room;
+        _summonCount = Mathf.Max(1, summonCount);
+        _minCooldown = Mathf.Max(0.1f, minCooldown);
+        _maxCooldown = Mathf.Max(_minCooldown, maxCooldown);
+        _summonSound = summonSound;
+        _summonSoundVolume = Mathf.Clamp01(summonSoundVolume);
+        ScheduleNextSummon();
+    }
+
+    private void Awake()
+    {
+        _enemyBase = GetComponent<EnemyBase>();
+        ScheduleNextSummon();
+    }
+
+    public void OnAttackEnter()
+    {
+    }
+
+    public void Tick()
+    {
+        if (_room == null || Time.time < _nextSummonTime)
+            return;
+
+        ScheduleNextSummon();
+
+        if (_room.TrySummonEnemies(gameObject, _summonCount))
+        {
+            _enemyBase?.PlayAttackAnimationOneShot();
+            if (_summonSound != null)
+                AudioManager.Instance?.PlaySfx(_summonSound, _summonSoundVolume);
+        }
+    }
+
+    private void ScheduleNextSummon()
+    {
+        _nextSummonTime = Time.time + Random.Range(_minCooldown, _maxCooldown);
     }
 }

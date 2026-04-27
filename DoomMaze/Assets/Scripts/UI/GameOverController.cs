@@ -15,8 +15,7 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
     [Header("Victory Reveal")]
     [SerializeField] private float _victoryWhiteFadeDuration = 1.8f;
     [SerializeField] private float _victoryTextFadeDuration = 1.1f;
-    [SerializeField] private float _victoryButtonDelay = 0.45f;
-    [SerializeField] private float _victoryButtonFadeDuration = 0.7f;
+    [SerializeField] private float _victoryAutoReturnDelay = 3.5f;
     [Header("UI Audio")]
     [SerializeField] private AudioClip[] _hoverSounds;
     [Range(0f, 1f)] [SerializeField] private float _hoverSoundVolume = 1f;
@@ -109,20 +108,20 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
         yield return FadeImageAlpha(_victoryWhiteOverlay, 0f, 1f, _victoryWhiteFadeDuration);
         yield return FadeCanvasGroupAlpha(_victoryLabelGroup, 0f, 1f, _victoryTextFadeDuration);
 
-        float delay = Mathf.Max(0f, _victoryButtonDelay);
+        float delay = Mathf.Max(0f, _victoryAutoReturnDelay);
         if (delay > 0f)
             yield return new WaitForSecondsRealtime(delay);
 
-        yield return FadeButtonGroups(0f, 1f, _victoryButtonFadeDuration);
-        SetVictoryButtonsInteractable(true);
-
         _victoryRevealRoutine = null;
+        SceneFlowManager.Instance?.LoadScene("MainMenu");
     }
 
     private void PrepareVictoryRevealReferences()
     {
         _victoryWhiteOverlay = EnsureVictoryWhiteOverlay();
-        _victoryLabelGroup = EnsureCanvasGroup(FindVictoryLabelTransform());
+        TMP_Text victoryLabel = EnsureVictoryLabel();
+        ConfigureVictoryLabel(victoryLabel);
+        _victoryLabelGroup = EnsureCanvasGroup(victoryLabel != null ? victoryLabel.transform : _victoryPanel.transform);
         _victoryButtons = _victoryPanel.GetComponentsInChildren<Button>(true);
         _victoryButtonGroups = new CanvasGroup[_victoryButtons.Length];
 
@@ -152,18 +151,52 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
         return overlay;
     }
 
-    private Transform FindVictoryLabelTransform()
+    private TMP_Text EnsureVictoryLabel()
+    {
+        TMP_Text existing = FindVictoryLabel();
+        if (existing != null)
+            return existing;
+
+        GameObject labelObject = new("VictoryAutoReturnLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        labelObject.transform.SetParent(_victoryPanel.transform, false);
+        return labelObject.GetComponent<TextMeshProUGUI>();
+    }
+
+    private TMP_Text FindVictoryLabel()
     {
         TMP_Text[] labels = _victoryPanel.GetComponentsInChildren<TMP_Text>(true);
         for (int i = 0; i < labels.Length; i++)
         {
             TMP_Text label = labels[i];
             string labelText = label != null && label.text != null ? label.text : string.Empty;
-            if (label != null && (label.name.Contains("Victory") || labelText.ToLowerInvariant().Contains("victory")))
-                return label.transform;
+            string normalizedText = labelText.ToLowerInvariant();
+            if (label != null && (label.name.Contains("Victory") || normalizedText.Contains("victory") || normalizedText.Contains("complete")))
+                return label;
         }
 
-        return labels.Length > 0 && labels[0] != null ? labels[0].transform : _victoryPanel.transform;
+        return null;
+    }
+
+    private static void ConfigureVictoryLabel(TMP_Text label)
+    {
+        if (label == null)
+            return;
+
+        label.text = "LEVEL COMPLETE";
+        label.color = Color.black;
+        label.alignment = TextAlignmentOptions.Center;
+        label.textWrappingMode = TextWrappingModes.NoWrap;
+        label.enableAutoSizing = true;
+        label.fontSizeMin = 36f;
+        label.fontSizeMax = 96f;
+        label.raycastTarget = false;
+        label.transform.SetAsLastSibling();
+
+        RectTransform rect = label.rectTransform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
     }
 
     private static CanvasGroup EnsureCanvasGroup(Transform target)
@@ -200,7 +233,10 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
         for (int i = 0; i < _victoryButtons.Length; i++)
         {
             if (_victoryButtons[i] != null)
+            {
                 _victoryButtons[i].interactable = interactable;
+                _victoryButtons[i].gameObject.SetActive(interactable);
+            }
         }
     }
 
@@ -236,27 +272,6 @@ public class GameOverController : MonoBehaviour, IMenuHoverAudioProvider
         }
 
         SetCanvasGroupAlpha(group, to);
-    }
-
-    private IEnumerator FadeButtonGroups(float from, float to, float duration)
-    {
-        if (_victoryButtonGroups == null)
-            yield break;
-
-        float elapsed = 0f;
-        duration = Mathf.Max(0.01f, duration);
-        while (elapsed < duration)
-        {
-            elapsed += Time.unscaledDeltaTime;
-            float alpha = Mathf.Lerp(from, to, Mathf.Clamp01(elapsed / duration));
-            for (int i = 0; i < _victoryButtonGroups.Length; i++)
-                SetCanvasGroupAlpha(_victoryButtonGroups[i], alpha);
-
-            yield return null;
-        }
-
-        for (int i = 0; i < _victoryButtonGroups.Length; i++)
-            SetCanvasGroupAlpha(_victoryButtonGroups[i], to);
     }
 
     private static void SetImageAlpha(Image image, float alpha)

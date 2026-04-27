@@ -23,3 +23,15 @@ public interface IAttackModule
 
     string AttackAnimTrigger { get; }
 }
+
+/// <summary>Optional attack contract for modules that can be selected only when their own cooldown is ready.</summary>
+public interface IConditionalAttackModule
+{
+    bool CanStartAttack { get; }
+}
+
+/// <summary>Optional attack contract for modules with a delayed windup that should not be interrupted by reselection.</summary>
+public interface IAttackExecutionStatus
+{
+    bool IsExecuting { get; }
+}
